@@ -3,16 +3,28 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Времето по градове</title>
+    <title>Прогноза за времето</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div class="container">
-        <h1>Провери времето</h1>
-        <input type="text" id="cityInput" placeholder="Въведи град">
-        <button id="searchBtn">Търси</button>
-        <div id="weatherResult"></div>
-    </div>
+    <header class="main-header">
+        <a href="#" class="logo" id="logo">Прогноза за времето</a>
+        <form id="headerSearchForm" class="header-search" autocomplete="off" onsubmit="return false;">
+            <input type="text" id="cityInput" placeholder="Въведи град">
+            <button id="searchBtn" type="button">Търси</button>
+        </form>
+    </header>
+    <main id="mainContent">
+        <section id="homeSection">
+            <h2 class="subtitle">Времето в най-големите европейски столици</h2>
+            <div id="capitalsWeather" class="capitals-grid"></div>
+        </section>
+        <section id="searchSection" style="display:none;">
+            <div class="container">
+                <div id="weatherResult"></div>
+            </div>
+        </section>
+    </main>
     <script src="app.js"></script>
 </body>
 </html>
