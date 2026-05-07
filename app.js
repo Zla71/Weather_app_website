@@ -29,6 +29,24 @@ async function getWeather() {
                 cityDescription = wikiData.extract ? wikiData.extract : '';
             }
         } catch (e) { /* игнорирай грешки */ }
+        // Вземи снимка на града от Wikipedia (ако има)
+        let cityImageUrl = '';
+        try {
+            const wikiImgResp = await fetch(`https://bg.wikipedia.org/api/rest_v1/page/media-list/${encodeURIComponent(city)}`);
+            if (wikiImgResp.ok) {
+                const wikiImgData = await wikiImgResp.json();
+                if (wikiImgData.items && wikiImgData.items.length > 0) {
+                    // Търси първото изображение с type 'image'
+                    const imgItem = wikiImgData.items.find(item => item.type === 'image' && item.showInGallery !== false);
+                    if (imgItem && imgItem.srcset && imgItem.srcset.length > 0) {
+                        // Вземи най-голямото изображение
+                        cityImageUrl = imgItem.srcset[imgItem.srcset.length - 1].src;
+                    } else if (imgItem && imgItem.src) {
+                        cityImageUrl = imgItem.src;
+                    }
+                }
+            }
+        } catch (e) { /* игнорирай грешки */ }
         // 2. Вземи прогноза от Open-Meteo
         const meteoResp = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_sum&timezone=auto&forecast_days=7&lang=bg`);
         const meteoData = await meteoResp.json();
@@ -38,6 +56,9 @@ async function getWeather() {
         }
         // 3. Показване на прогнозата
         let html = `<strong>${displayName.split(',')[0]}</strong> <span style="color:#2471a3;font-size:1em;">(${country})</span><br>`;
+        if (cityImageUrl) {
+            html += `<div style="margin:10px 0;"><img src="${cityImageUrl}" alt="${city}" style="max-width:100%;height:auto;border-radius:12px;box-shadow:0 2px 8px #b3d8f733;max-height:260px;object-fit:cover;"></div>`;
+        }
         if (cityDescription) {
             html += `<div style="font-size:0.98em;color:#444;margin-bottom:8px;">${cityDescription}</div>`;
         }
