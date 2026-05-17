@@ -67,12 +67,23 @@ async function getWeather() {
         // Времето в момента
         let currentWeatherHtml = '';
         try {
-            const currentResp = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&lang=bg`);
+            const currentResp = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&hourly=relative_humidity_2m&timezone=auto&lang=bg`);
             const currentData = await currentResp.json();
+            let humidity = '-';
+            if (currentData.hourly && currentData.hourly.relative_humidity_2m && currentData.current_weather) {
+                // Намираме индекса на текущия час
+                const now = new Date(currentData.current_weather.time);
+                const idx = currentData.hourly.time.findIndex(t => t === currentData.current_weather.time);
+                if (idx !== -1) {
+                    humidity = currentData.hourly.relative_humidity_2m[idx];
+                }
+            } else if (currentData.current_weather && currentData.current_weather.relativehumidity) {
+                humidity = currentData.current_weather.relativehumidity;
+            }
             if (currentData.current_weather) {
                 const c = currentData.current_weather;
                 const icon = getMeteoIcon(c.weathercode);
-                currentWeatherHtml = `<div class=\"current-weather\" style=\"margin:12px 0 8px 0;font-size:1.2em;\"><b>Сега:</b> <span style=\"font-size:1.5em;\">${icon} ${c.temperature}°C</span>, Вятър: ${c.windspeed} км/ч, Влажност: ${c.relativehumidity ?? '-'}%</div>`;
+                currentWeatherHtml = `<div class=\"current-weather\" style=\"margin:12px 0 8px 0;font-size:1.2em;\"><b>Сега:</b> <span style=\"font-size:1.5em;\">${icon} ${c.temperature}°C</span>, Вятър: ${c.windspeed} км/ч, Влажност: ${humidity}%</div>`;
             }
         } catch(e) {}
         cityInfoHtml += currentWeatherHtml;
@@ -90,8 +101,24 @@ async function getWeather() {
         cityInfoHtml += `<div id="forecastContainer"></div>`;
         resultDiv.innerHTML = cityInfoHtml;
 
+        // --- Нови функции за показване на режими ---
+        function showCityMain() {
+            document.querySelector('.city-info-panel').style.display = '';
+            document.getElementById('forecastContainer').innerHTML = '';
+            document.querySelector('.city-info-panel').querySelector('#btnDaily').style.display = '';
+            document.querySelector('.city-info-panel').querySelector('#btnHourly').style.display = '';
+        }
+        function showBackButton(onClick) {
+            let fc = document.getElementById('forecastContainer');
+            let backBtn = document.createElement('button');
+            backBtn.textContent = 'Назад';
+            backBtn.style = 'margin:18px 0 0 0;display:block;';
+            backBtn.onclick = onClick;
+            fc.appendChild(backBtn);
+        }
         // Функция за визуализация на 7-дневна прогноза
         function renderDailyForecast() {
+            document.querySelector('.city-info-panel').style.display = 'none';
             let dailyHtml = '<b>7-дневна прогноза:</b><br>';
             dailyHtml += '<div style="display: flex; flex-wrap: wrap; gap: 10px; justify-content: center;">';
             for (let i = 0; i < meteoData.daily.time.length; i++) {
@@ -108,10 +135,13 @@ async function getWeather() {
             }
             dailyHtml += '</div>';
             document.getElementById('forecastContainer').innerHTML = dailyHtml;
+            showBackButton(() => {
+                showCityMain();
+            });
         }
-
         // Функция за визуализация на почасова прогноза (48ч от сега)
         async function renderHourlyForecast() {
+            document.querySelector('.city-info-panel').style.display = 'none';
             let hourlyHtml = '<b>Почасова прогноза (48ч):</b><br>';
             let lastDate = '';
             hourlyHtml += '<div class="hourly-grid">';
@@ -158,14 +188,20 @@ async function getWeather() {
                 }
                 hourlyHtml += '</div>';
                 document.getElementById('forecastContainer').innerHTML = hourlyHtml;
+                showBackButton(() => {
+                    showCityMain();
+                });
             } catch (e) {
                 document.getElementById('forecastContainer').innerHTML = 'Грешка при зареждане на почасова прогноза.';
+                showBackButton(() => {
+                    showCityMain();
+                });
             }
         }
-
-        document.getElementById('btnDaily').addEventListener('click', renderDailyForecast);
-        document.getElementById('btnHourly').addEventListener('click', renderHourlyForecast);
-        renderDailyForecast();
+        // Първоначално показваме само инфо за града и бутоните
+        showCityMain();
+        document.getElementById('btnDaily').onclick = renderDailyForecast;
+        document.getElementById('btnHourly').onclick = renderHourlyForecast;
     } catch (err) {
         resultDiv.textContent = 'Грешка при зареждане на прогнозата.';
     }
