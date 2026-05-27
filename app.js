@@ -171,11 +171,6 @@ async function getWeather() {
                             hourlyHtml += `<div style=\"grid-column: 1 / -1; flex-basis:100%;font-weight:bold;font-size:1.1em;margin:10px 0 0 0;\">${dateStr}</div>`;
                             lastDate = dateStr;
                         }
-                        function windDirectionText(deg) {
-                            if (deg === '-') return '-';
-                            const dirs = ['С', 'ССИ', 'СИ', 'ИСИ', 'И', 'ИЮИ', 'ЮИ', 'ЮЮИ', 'Ю', 'ЮЮЗ', 'ЮЗ', 'ЗЮЗ', 'З', 'ЗСЗ', 'СЗ', 'ССЗ', 'С'];
-                            return dirs[Math.round(deg / 22.5) % 16];
-                        }
                         hourlyHtml += `<div class=\"forecast-hour animate-fade-in\">
                             <div style=\"font-size:1.2em;font-weight:bold;\">${hour.getHours()}:00</div>
                             <span style=\"font-size:2.2em;\">${iconUrl}</span>
@@ -243,6 +238,13 @@ function getMeteoIcon(code) {
     return emojiMap[code] || '❔';
 }
 
+// Глобална функция за текстово описание на посоката на вятъра
+function windDirectionText(deg) {
+    if (deg === undefined || deg === null || deg === '-' || isNaN(deg)) return '-';
+    const dirs = ['С', 'ССИ', 'СИ', 'ИСИ', 'И', 'ИЮИ', 'ЮИ', 'ЮЮИ', 'Ю', 'ЮЮЗ', 'ЮЗ', 'ЗЮЗ', 'З', 'ЗСЗ', 'СЗ', 'ССЗ', 'С'];
+    return dirs[Math.round(deg / 22.5) % 16];
+}
+
 // --- НАЧАЛНА СТРАНИЦА И НАВИГАЦИЯ ---
 
 // Списък с най-големите европейски столици
@@ -276,14 +278,28 @@ async function showCapitalsWeather() {
         const temp = Math.round(meteoData.current_weather.temperature);
         const code = meteoData.current_weather.weathercode;
         const icon = getMeteoIcon(code);
-        return `<div class="capital-card">
+        const windSpeed = meteoData.current_weather.windspeed;
+        const windDir = meteoData.current_weather.winddirection;
+        const windDirText = windDirectionText(windDir);
+        // Добавяме data-атрибут с името на града (на български)
+        return `<div class="capital-card" data-city="${cap.name}">
             <div class="city">${cap.name}</div>
             <div class="temp">${icon} ${temp}°C</div>
-            <div class="desc">${meteoData.current_weather.windspeed} км/ч, ${meteoData.current_weather.winddirection}°</div>
+            <div class="desc">${windSpeed} км/ч, ${windDir}° (${windDirText})</div>
         </div>`;
     });
     const results = await Promise.all(promises);
     grid.innerHTML = results.join('');
+    // Добавяме event listener-и за избор на град
+    Array.from(grid.querySelectorAll('.capital-card')).forEach(card => {
+        card.style.cursor = 'pointer';
+        card.addEventListener('click', async function() {
+            const city = card.getAttribute('data-city');
+            document.getElementById('cityInput').value = city;
+            showSearch();
+            await getWeather();
+        });
+    });
 }
 
 // Показване на начална страница и секция за търсене
