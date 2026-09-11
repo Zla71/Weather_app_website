@@ -143,11 +143,29 @@ async function getWeather(isRelang) {
         const lon = geoData.results[0].geometry.lng;
         const displayName = geoData.results[0].formatted;
         const country = geoData.results[0].components.country || '';
+        // Wikipedia статиите за даден град имат заглавие на съответния език
+        // (напр. "Paris" на английски, "París" на испански, "Париж" на български).
+        // Ако потребителят е потърсил града на кирилица/друга азбука, докато е
+        // избран английски или испански език, директната заявка към Wikipedia
+        // с оригиналния въведен текст ще се провали (404), защото няма статия
+        // с такова заглавие на съответната Wikipedia. За да разрешим това,
+        // правим обратно геокодиране (по lat/lon) на избрания език, за да
+        // получим локализираното име на града и го използваме за Wikipedia.
+        const wikiLang = currentLang;
+        let cityNameForWiki = city;
+        try {
+            const reverseGeoResp = await fetch(`https://api.opencagedata.com/geocode/v1/json?q=${lat}+${lon}&key=${openCageApiKey}&language=${wikiLang}&limit=1`);
+            const reverseGeoData = await reverseGeoResp.json();
+            if (reverseGeoData.results && reverseGeoData.results.length) {
+                const comp = reverseGeoData.results[0].components;
+                cityNameForWiki = comp.city || comp.town || comp.village || comp.municipality
+                    || reverseGeoData.results[0].formatted.split(',')[0];
+            }
+        } catch (e) { /* при грешка използваме оригиналното име */ }
         // Вземи кратко описание от Wikipedia API
         let cityDescription = '';
         try {
-            const wikiLang = currentLang;
-            const wikiResp = await fetch(`https://${wikiLang}.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(city)}`);
+            const wikiResp = await fetch(`https://${wikiLang}.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(cityNameForWiki)}`);
             if (wikiResp.ok) {
                 const wikiData = await wikiResp.json();
                 cityDescription = wikiData.extract ? wikiData.extract : '';
@@ -156,8 +174,7 @@ async function getWeather(isRelang) {
         // Вземи снимка на града от Wikipedia (ако има)
         let cityImageUrl = '';
         try {
-            const wikiLang = currentLang;
-            const wikiImgResp = await fetch(`https://${wikiLang}.wikipedia.org/api/rest_v1/page/media-list/${encodeURIComponent(city)}`);
+            const wikiImgResp = await fetch(`https://${wikiLang}.wikipedia.org/api/rest_v1/page/media-list/${encodeURIComponent(cityNameForWiki)}`);
             if (wikiImgResp.ok) {
                 const wikiImgData = await wikiImgResp.json();
                 if (wikiImgData.items && wikiImgData.items.length > 0) {
