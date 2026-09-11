@@ -1,30 +1,153 @@
-// Open-Meteo не изисква API ключ, но трябва да вземем координати на града чрез Nominatim (OpenStreetMap)
-async function getWeather() {
-    const city = document.getElementById('cityInput').value.trim();
+// --- Езикови ресурси ---
+const LANGS = {
+    bg: {
+        title: 'Прогноза за времето',
+        searchPlaceholder: 'Въведи град',
+        searchBtn: 'Търси',
+        subtitle: 'Времето в най-големите европейски столици',
+        now: 'Сега',
+        wind: 'Вятър',
+        windUnit: 'км/ч',
+        humidity: 'Влажност',
+        back: 'Назад',
+        daily: '7-дневна прогноза',
+        hourly: 'Почасова прогноза',
+        loading: 'Зареждане...',
+        notFound: 'Градът не е намерен.',
+        noForecast: 'Няма прогноза за този град.',
+        noHourly: 'Няма почасова прогноза.',
+        error: 'Грешка при зареждане на прогнозата.',
+        min: 'Мин',
+        max: 'Макс',
+        precip: 'Валежи',
+        windDirs: ['С', 'ССИ', 'СИ', 'ИСИ', 'И', 'ИЮИ', 'ЮИ', 'ЮЮИ', 'Ю', 'ЮЮЗ', 'ЮЗ', 'ЗЮЗ', 'З', 'ЗСЗ', 'СЗ', 'ССЗ', 'С']
+    },
+    en: {
+        title: 'Weather Forecast',
+        searchPlaceholder: 'Enter city',
+        searchBtn: 'Search',
+        subtitle: 'Weather in the largest European capitals',
+        now: 'Now',
+        wind: 'Wind',
+        windUnit: 'km/h',
+        humidity: 'Humidity',
+        back: 'Back',
+        daily: '7-day forecast',
+        hourly: 'Hourly forecast',
+        loading: 'Loading...',
+        notFound: 'City not found.',
+        noForecast: 'No forecast for this city.',
+        noHourly: 'No hourly forecast.',
+        error: 'Error loading forecast.',
+        min: 'Min',
+        max: 'Max',
+        precip: 'Precip.',
+        windDirs: ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW', 'N']
+    },
+    es: {
+        title: 'Pronóstico del tiempo',
+        searchPlaceholder: 'Introduce ciudad',
+        searchBtn: 'Buscar',
+        subtitle: 'El tiempo en las mayores capitales europeas',
+        now: 'Ahora',
+        wind: 'Viento',
+        windUnit: 'km/h',
+        humidity: 'Humedad',
+        back: 'Atrás',
+        daily: 'Pronóstico de 7 días',
+        hourly: 'Pronóstico por horas',
+        loading: 'Cargando...',
+        notFound: 'Ciudad no encontrada.',
+        noForecast: 'No hay pronóstico para esta ciudad.',
+        noHourly: 'No hay pronóstico por horas.',
+        error: 'Error al cargar el pronóstico.',
+        min: 'Mín',
+        max: 'Máx',
+        precip: 'Precip.',
+        windDirs: ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSO', 'SO', 'OSO', 'O', 'ONO', 'NO', 'NNO', 'N']
+    }
+};
+let currentLang = 'bg';
+let lastSearchedCity = '';
+let currentView = 'main'; // 'main' | 'daily' | 'hourly'
+
+function setLang(lang) {
+    currentLang = lang;
+    document.title = LANGS[lang].title;
+    document.querySelector('.logo').textContent = LANGS[lang].title;
+    document.getElementById('cityInput').placeholder = LANGS[lang].searchPlaceholder;
+    document.getElementById('searchBtn').textContent = LANGS[lang].searchBtn;
+    const subtitle = document.querySelector('.subtitle');
+    if (subtitle) subtitle.textContent = LANGS[lang].subtitle;
+    // Превеждаме бутони, ако сме на страница на град
+    if (document.getElementById('btnDaily')) document.getElementById('btnDaily').textContent = LANGS[lang].daily;
+    if (document.getElementById('btnHourly')) document.getElementById('btnHourly').textContent = LANGS[lang].hourly;
+    translateCurrentSection();
+}
+
+function windDirectionText(deg) {
+    if (deg === undefined || deg === null || deg === '-' || isNaN(deg)) return '-';
+    const dirs = LANGS[currentLang].windDirs;
+    return dirs[Math.round(deg / 22.5) % 16];
+}
+
+// --- Обработка на езиковите бутони ---
+document.addEventListener('DOMContentLoaded', () => {
+    ['langBg','langEn','langEs'].forEach(id => {
+        const btn = document.getElementById(id);
+        if (btn) {
+            btn.onclick = async () => {
+                setLang(id === 'langBg' ? 'bg' : id === 'langEn' ? 'en' : 'es');
+                // Ако вече има избран град, презареждаме цялата информация на новия език,
+                // запазвайки текущия изглед (основна/7-дневна/почасова)
+                if (lastSearchedCity) {
+                    const viewToRestore = currentView;
+                    await getWeather(true);
+                    if (viewToRestore === 'daily' && typeof window.__renderDailyForecast === 'function') {
+                        window.__renderDailyForecast();
+                    } else if (viewToRestore === 'hourly' && typeof window.__renderHourlyForecast === 'function') {
+                        window.__renderHourlyForecast();
+                    }
+                }
+            };
+        }
+    });
+});
+
+// Помощна функция (оставена за съвместимост, вече не се използва за парсене)
+function translateCurrentSection() {}
+
+// --- Модифициран getWeather ---
+async function getWeather(isRelang) {
+    const city = isRelang ? lastSearchedCity : document.getElementById('cityInput').value.trim();
     const resultDiv = document.getElementById('weatherResult');
     if (!city) {
-        resultDiv.textContent = 'Моля, въведи име на град.';
+        resultDiv.textContent = LANGS[currentLang].searchPlaceholder;
         return;
     }
-    resultDiv.textContent = 'Зареждане...';
+    lastSearchedCity = city;
+    if (!isRelang) currentView = 'main';
+    resultDiv.textContent = LANGS[currentLang].loading;
     try {
         // 1. Вземи координати от OpenCage
-        const openCageApiKey = 'e6c4ae76e7b84e66a3ebd42e00ed99b5'; // <-- постави тук своя ключ
-        const geoResp = await fetch(`https://api.opencagedata.com/geocode/v1/json?q=${encodeURIComponent(city)}&key=${openCageApiKey}&language=bg&limit=1`);
+        const openCageApiKey = 'e6c4ae76e7b84e66a3ebd42e00ed99b5';
+        // Ако езикът е bg, търси на bg, ако е en или es - на en
+        const geoLang = currentLang === 'bg' ? 'bg' : 'en';
+        const geoResp = await fetch(`https://api.opencagedata.com/geocode/v1/json?q=${encodeURIComponent(city)}&key=${openCageApiKey}&language=${geoLang}&limit=1`);
         const geoData = await geoResp.json();
         if (!geoData.results || !geoData.results.length) {
-            resultDiv.textContent = 'Градът не е намерен.';
+            resultDiv.textContent = LANGS[currentLang].notFound;
             return;
         }
         const lat = geoData.results[0].geometry.lat;
         const lon = geoData.results[0].geometry.lng;
         const displayName = geoData.results[0].formatted;
-        // Вземи държавата (ако има)
         const country = geoData.results[0].components.country || '';
         // Вземи кратко описание от Wikipedia API
         let cityDescription = '';
         try {
-            const wikiResp = await fetch(`https://bg.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(city)}`);
+            const wikiLang = currentLang;
+            const wikiResp = await fetch(`https://${wikiLang}.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(city)}`);
             if (wikiResp.ok) {
                 const wikiData = await wikiResp.json();
                 cityDescription = wikiData.extract ? wikiData.extract : '';
@@ -33,14 +156,13 @@ async function getWeather() {
         // Вземи снимка на града от Wikipedia (ако има)
         let cityImageUrl = '';
         try {
-            const wikiImgResp = await fetch(`https://bg.wikipedia.org/api/rest_v1/page/media-list/${encodeURIComponent(city)}`);
+            const wikiLang = currentLang;
+            const wikiImgResp = await fetch(`https://${wikiLang}.wikipedia.org/api/rest_v1/page/media-list/${encodeURIComponent(city)}`);
             if (wikiImgResp.ok) {
                 const wikiImgData = await wikiImgResp.json();
                 if (wikiImgData.items && wikiImgData.items.length > 0) {
-                    // Търси първото изображение с type 'image'
                     const imgItem = wikiImgData.items.find(item => item.type === 'image' && item.showInGallery !== false);
                     if (imgItem && imgItem.srcset && imgItem.srcset.length > 0) {
-                        // Вземи най-голямото изображение
                         cityImageUrl = imgItem.srcset[imgItem.srcset.length - 1].src;
                     } else if (imgItem && imgItem.src) {
                         cityImageUrl = imgItem.src;
@@ -49,10 +171,11 @@ async function getWeather() {
             }
         } catch (e) { /* игнорирай грешки */ }
         // 2. Вземи прогноза от Open-Meteo
-        const meteoResp = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_sum&timezone=auto&forecast_days=7&lang=bg`);
+        const meteoLang = currentLang === 'bg' ? 'bg' : (currentLang === 'es' ? 'es' : 'en');
+        const meteoResp = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_sum&timezone=auto&forecast_days=7&lang=${meteoLang}`);
         const meteoData = await meteoResp.json();
         if (!meteoData.daily) {
-            resultDiv.textContent = 'Няма прогноза за този град.';
+            resultDiv.textContent = LANGS[currentLang].noForecast;
             return;
         }
         // 3. Показване на информация за града и бутоните за избор на прогноза
@@ -67,11 +190,10 @@ async function getWeather() {
         // Времето в момента
         let currentWeatherHtml = '';
         try {
-            const currentResp = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&hourly=relative_humidity_2m&timezone=auto&lang=bg`);
+            const currentResp = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&hourly=relative_humidity_2m&timezone=auto&lang=${meteoLang}`);
             const currentData = await currentResp.json();
             let humidity = '-';
             if (currentData.hourly && currentData.hourly.relative_humidity_2m && currentData.current_weather) {
-                // Намираме индекса на текущия час
                 const now = new Date(currentData.current_weather.time);
                 const idx = currentData.hourly.time.findIndex(t => t === currentData.current_weather.time);
                 if (idx !== -1) {
@@ -83,26 +205,26 @@ async function getWeather() {
             if (currentData.current_weather) {
                 const c = currentData.current_weather;
                 const icon = getMeteoIcon(c.weathercode);
-                currentWeatherHtml = `<div class=\"current-weather\" style=\"margin:12px 0 8px 0;font-size:1.2em;\"><b>Сега:</b> <span style=\"font-size:1.5em;\">${icon} ${c.temperature}°C</span>, Вятър: ${c.windspeed} км/ч, Влажност: ${humidity}%</div>`;
+                const windDir = c.winddirection;
+                currentWeatherHtml = `<div class=\"current-weather\" style=\"margin:12px 0 8px 0;font-size:1.2em;\"><b>${LANGS[currentLang].now}:</b> <span style=\"font-size:1.5em;\">${icon} ${c.temperature}°C</span>, ${LANGS[currentLang].wind}: ${c.windspeed} ${LANGS[currentLang].windUnit} ${windDirectionText(windDir)}, ${LANGS[currentLang].humidity}: ${humidity}%</div>`;
             }
         } catch(e) {}
         cityInfoHtml += currentWeatherHtml;
         cityInfoHtml += `<div style="margin:18px 0 10px 0;">
-            <button id="btnDaily" style="margin-right:8px;">7-дневна прогноза</button>
-            <button id="btnHourly">Почасова прогноза</button>
+            <button id="btnDaily" style="margin-right:8px;">${LANGS[currentLang].daily}</button>
+            <button id="btnHourly">${LANGS[currentLang].hourly}</button>
         </div>`;
         cityInfoHtml += '</div>';
-        // Карта с маркер за града
         cityInfoHtml += `<div style="margin:10px 0 16px 0;display:flex;justify-content:center;">
             <iframe width="320" height="180" style="border-radius:10px;border:1.5px solid #b3d8f7;box-shadow:0 2px 8px #b3d8f733;" loading="lazy"
                 src="https://www.openstreetmap.org/export/embed.html?layer=mapnik&marker=${lat}%2C${lon}&zoom=12&mlat=${lat}&mlon=${lon}"></iframe>
         </div>`;
-        // Контейнер за прогнозата
         cityInfoHtml += `<div id="forecastContainer"></div>`;
         resultDiv.innerHTML = cityInfoHtml;
 
         // --- Нови функции за показване на режими ---
         function showCityMain() {
+            currentView = 'main';
             document.querySelector('.city-info-panel').style.display = '';
             document.getElementById('forecastContainer').innerHTML = '';
             document.querySelector('.city-info-panel').querySelector('#btnDaily').style.display = '';
@@ -111,26 +233,27 @@ async function getWeather() {
         function showBackButton(onClick) {
             let fc = document.getElementById('forecastContainer');
             let backBtn = document.createElement('button');
-            backBtn.textContent = 'Назад';
+            backBtn.textContent = LANGS[currentLang].back;
             backBtn.style = 'margin:18px 0 0 0;display:block;';
             backBtn.onclick = onClick;
             fc.appendChild(backBtn);
         }
         // Функция за визуализация на 7-дневна прогноза
         function renderDailyForecast() {
+            currentView = 'daily';
             document.querySelector('.city-info-panel').style.display = 'none';
-            let dailyHtml = '<b>7-дневна прогноза:</b><br>';
+            let dailyHtml = `<b>${LANGS[currentLang].daily}:</b><br>`;
             dailyHtml += '<div style="display: flex; flex-wrap: wrap; gap: 10px; justify-content: center;">';
             for (let i = 0; i < meteoData.daily.time.length; i++) {
                 const date = new Date(meteoData.daily.time[i]);
                 const code = meteoData.daily.weathercode[i];
                 const iconUrl = getMeteoIcon(code);
-                dailyHtml += `<div class="forecast-day animate-fade-in">
-                    <b>${date.toLocaleDateString('bg-BG', { weekday: 'short', day: 'numeric', month: 'short' })}</b><br>
-                    <span style="font-size: 2em;">${iconUrl}</span>
-                    <br>Макс: <b>${meteoData.daily.temperature_2m_max[i]}°C</b><br>
-                    Мин: ${meteoData.daily.temperature_2m_min[i]}°C<br>
-                    Валежи: ${meteoData.daily.precipitation_sum[i]} mm<br>
+                dailyHtml += `<div class=\"forecast-day animate-fade-in\">
+                    <b>${date.toLocaleDateString(currentLang === 'bg' ? 'bg-BG' : currentLang === 'es' ? 'es-ES' : 'en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</b><br>
+                    <span style=\"font-size: 2em;\">${iconUrl}</span>
+                    <br>${LANGS[currentLang].max}: <b>${meteoData.daily.temperature_2m_max[i]}°C</b><br>
+                    ${LANGS[currentLang].min}: ${meteoData.daily.temperature_2m_min[i]}°C<br>
+                    ${LANGS[currentLang].precip}: ${meteoData.daily.precipitation_sum[i]} mm<br>
                 </div>`;
             }
             dailyHtml += '</div>';
@@ -141,8 +264,9 @@ async function getWeather() {
         }
         // Функция за визуализация на почасова прогноза (48ч от сега)
         async function renderHourlyForecast() {
+            currentView = 'hourly';
             document.querySelector('.city-info-panel').style.display = 'none';
-            let hourlyHtml = '<b>Почасова прогноза (48ч):</b><br>';
+            let hourlyHtml = `<b>${LANGS[currentLang].hourly} (48ч):</b><br>`;
             let lastDate = '';
             hourlyHtml += '<div class="hourly-grid">';
             const now = new Date();
@@ -150,10 +274,10 @@ async function getWeather() {
             const end = new Date(now.getTime() + 48 * 60 * 60 * 1000);
             const endISO = end.toISOString().slice(0, 13) + ':00';
             try {
-                const hourlyResp = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,weathercode,precipitation,wind_speed_10m,wind_direction_10m,relative_humidity_2m&timezone=auto&start_date=${startISO.slice(0,10)}&end_date=${endISO.slice(0,10)}&lang=bg`);
+                const hourlyResp = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,weathercode,precipitation,wind_speed_10m,wind_direction_10m,relative_humidity_2m&timezone=auto&start_date=${startISO.slice(0,10)}&end_date=${endISO.slice(0,10)}&lang=${meteoLang}`);
                 const hourlyData = await hourlyResp.json();
                 if (!hourlyData.hourly) {
-                    hourlyHtml += 'Няма почасова прогноза.';
+                    hourlyHtml += LANGS[currentLang].noHourly;
                 } else {
                     const nowTime = now.getTime();
                     for (let i = 0; i < hourlyData.hourly.time.length; i++) {
@@ -166,23 +290,18 @@ async function getWeather() {
                         const windDir = hourlyData.hourly.wind_direction_10m ? hourlyData.hourly.wind_direction_10m[i] : '-';
                         const humidity = hourlyData.hourly.relative_humidity_2m ? hourlyData.hourly.relative_humidity_2m[i] : '-';
                         const precipitation = hourlyData.hourly.precipitation ? hourlyData.hourly.precipitation[i] : '-';
-                        const dateStr = hour.toLocaleDateString('bg-BG', { day: 'numeric', month: 'short', year: 'numeric' });
+                        const dateStr = hour.toLocaleDateString(currentLang === 'bg' ? 'bg-BG' : currentLang === 'es' ? 'es-ES' : 'en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
                         if (dateStr !== lastDate) {
                             hourlyHtml += `<div style=\"grid-column: 1 / -1; flex-basis:100%;font-weight:bold;font-size:1.1em;margin:10px 0 0 0;\">${dateStr}</div>`;
                             lastDate = dateStr;
-                        }
-                        function windDirectionText(deg) {
-                            if (deg === '-') return '-';
-                            const dirs = ['С', 'ССИ', 'СИ', 'ИСИ', 'И', 'ИЮИ', 'ЮИ', 'ЮЮИ', 'Ю', 'ЮЮЗ', 'ЮЗ', 'ЗЮЗ', 'З', 'ЗСЗ', 'СЗ', 'ССЗ', 'С'];
-                            return dirs[Math.round(deg / 22.5) % 16];
                         }
                         hourlyHtml += `<div class=\"forecast-hour animate-fade-in\">
                             <div style=\"font-size:1.2em;font-weight:bold;\">${hour.getHours()}:00</div>
                             <span style=\"font-size:2.2em;\">${iconUrl}</span>
                             <div style=\"font-size:1.5em;font-weight:bold;margin:4px 0;\">${temp}°C</div>
-                            <div style=\"font-size:0.98em;color:#2471a3;\">Вятър: ${windSpeed} км/ч ${windDirectionText(windDir)}</div>
-                            <div style=\"font-size:0.98em;\">Влажност: ${humidity}%</div>
-                            <div style=\"font-size:0.98em;\">Валежи: ${precipitation} mm</div>
+                            <div style=\"font-size:0.98em;color:#2471a3;\">${LANGS[currentLang].wind}: ${windSpeed} ${LANGS[currentLang].windUnit} ${windDirectionText(windDir)}</div>
+                            <div style=\"font-size:0.98em;\">${LANGS[currentLang].humidity}: ${humidity}%</div>
+                            <div style=\"font-size:0.98em;\">${LANGS[currentLang].precip}: ${precipitation} mm</div>
                         </div>`;
                     }
                 }
@@ -192,7 +311,7 @@ async function getWeather() {
                     showCityMain();
                 });
             } catch (e) {
-                document.getElementById('forecastContainer').innerHTML = 'Грешка при зареждане на почасова прогноза.';
+                document.getElementById('forecastContainer').innerHTML = LANGS[currentLang].error;
                 showBackButton(() => {
                     showCityMain();
                 });
@@ -202,8 +321,12 @@ async function getWeather() {
         showCityMain();
         document.getElementById('btnDaily').onclick = renderDailyForecast;
         document.getElementById('btnHourly').onclick = renderHourlyForecast;
+        // Излагаме функциите глобално, за да могат да се извикат при смяна на език
+        window.__renderDailyForecast = renderDailyForecast;
+        window.__renderHourlyForecast = renderHourlyForecast;
+        window.__showCityMain = showCityMain;
     } catch (err) {
-        resultDiv.textContent = 'Грешка при зареждане на прогнозата.';
+        resultDiv.textContent = LANGS[currentLang].error;
     }
 }
 
@@ -243,6 +366,13 @@ function getMeteoIcon(code) {
     return emojiMap[code] || '❔';
 }
 
+// Глобална функция за текстово описание на посоката на вятъра
+function windDirectionText(deg) {
+    if (deg === undefined || deg === null || deg === '-' || isNaN(deg)) return '-';
+    const dirs = LANGS[currentLang].windDirs;
+    return dirs[Math.round(deg / 22.5) % 16];
+}
+
 // --- НАЧАЛНА СТРАНИЦА И НАВИГАЦИЯ ---
 
 // Списък с най-големите европейски столици
@@ -276,14 +406,28 @@ async function showCapitalsWeather() {
         const temp = Math.round(meteoData.current_weather.temperature);
         const code = meteoData.current_weather.weathercode;
         const icon = getMeteoIcon(code);
-        return `<div class="capital-card">
+        const windSpeed = meteoData.current_weather.windspeed;
+        const windDir = meteoData.current_weather.winddirection;
+        const windDirText = windDirectionText(windDir);
+        // Добавяме data-атрибут с името на града (на български)
+        return `<div class="capital-card" data-city="${cap.name}">
             <div class="city">${cap.name}</div>
             <div class="temp">${icon} ${temp}°C</div>
-            <div class="desc">${meteoData.current_weather.windspeed} км/ч, ${meteoData.current_weather.winddirection}°</div>
+            <div class="desc">${windSpeed} км/ч, ${windDir}° (${windDirText})</div>
         </div>`;
     });
     const results = await Promise.all(promises);
     grid.innerHTML = results.join('');
+    // Добавяме event listener-и за избор на град
+    Array.from(grid.querySelectorAll('.capital-card')).forEach(card => {
+        card.style.cursor = 'pointer';
+        card.addEventListener('click', async function() {
+            const city = card.getAttribute('data-city');
+            document.getElementById('cityInput').value = city;
+            showSearch();
+            await getWeather();
+        });
+    });
 }
 
 // Показване на начална страница и секция за търсене
