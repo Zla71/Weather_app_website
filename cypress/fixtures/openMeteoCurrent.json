@@ -1,0 +1,13 @@
+{
+  "current_weather": {
+    "temperature": 18.5,
+    "windspeed": 12.3,
+    "winddirection": 220,
+    "weathercode": 1,
+    "time": "2026-09-11T12:00"
+  },
+  "hourly": {
+    "time": ["2026-09-11T12:00"],
+    "relative_humidity_2m": [65]
+  }
+}

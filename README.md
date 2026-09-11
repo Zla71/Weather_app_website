@@ -194,6 +194,24 @@ Potential improvements:
 - [ ] Dark mode theme
 - [ ] More language options
 
+## End-to-End Testing (Cypress)
+
+The app has an automated Cypress test suite covering the homepage, language switcher, and city search flow (7-day/hourly forecasts, back navigation, and logo navigation). All external APIs (OpenCage, Open-Meteo, Wikipedia, Nominatim) are stubbed with `cy.intercept`, so the tests run deterministically and offline.
+
+### Setup
+```bash
+npm install
+npx cypress install   # downloads the Cypress binary (requires internet access)
+```
+
+### Running the tests
+```bash
+npm test            # starts a local static server and runs Cypress headlessly
+npm run cypress:open  # interactive mode (requires the app to be served, e.g. `npm start`)
+```
+
+Test files live in `cypress/e2e/`, fixtures in `cypress/fixtures/`, and shared setup (including the `cy.stubWeatherApis()` command) in `cypress/support/`.
+
 ## Notes
 
 - No API keys required for Open-Meteo and Nominatim
