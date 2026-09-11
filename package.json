@@ -1,0 +1,26 @@
+{
+  "name": "weather_app_website",
+  "version": "1.0.0",
+  "description": "A modern, multilingual weather forecast web application built with vanilla JavaScript, HTML, and CSS. The app provides real-time weather information for cities worldwide, with support for **Bulgarian**, **English**, and **Spanish** languages.",
+  "main": "app.js",
+  "scripts": {
+    "start": "http-server . -p 8080 -s",
+    "cypress:open": "cypress open",
+    "cypress:run": "cypress run",
+    "test": "start-server-and-test start http://localhost:8080 cypress:run",
+    "test:e2e": "npm test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "http://localhost:26831/Zla71/Weather_app_website"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "cypress": "^16.0.0",
+    "http-server": "^14.1.1",
+    "start-server-and-test": "^3.0.12"
+  }
+}
