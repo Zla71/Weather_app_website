@@ -131,8 +131,9 @@ async function getWeather(isRelang) {
     try {
         // 1. Вземи координати от OpenCage
         const openCageApiKey = 'e6c4ae76e7b84e66a3ebd42e00ed99b5';
-        // Ако езикът е bg, търси на bg, ако е en или es - на en
-        const geoLang = currentLang === 'bg' ? 'bg' : 'en';
+        // Търсим на съответния език, за да получим по-точни резултати за
+        // въведеното от потребителя име (поддържа кирилица и латиница).
+        const geoLang = currentLang === 'bg' ? 'bg' : (currentLang === 'es' ? 'es' : 'en');
         const geoResp = await fetch(`https://api.opencagedata.com/geocode/v1/json?q=${encodeURIComponent(city)}&key=${openCageApiKey}&language=${geoLang}&limit=1`);
         const geoData = await geoResp.json();
         if (!geoData.results || !geoData.results.length) {
@@ -141,27 +142,53 @@ async function getWeather(isRelang) {
         }
         const lat = geoData.results[0].geometry.lat;
         const lon = geoData.results[0].geometry.lng;
-        const displayName = geoData.results[0].formatted;
-        const country = geoData.results[0].components.country || '';
-        // Wikipedia статиите за даден град имат заглавие на съответния език
-        // (напр. "Paris" на английски, "París" на испански, "Париж" на български).
-        // Ако потребителят е потърсил града на кирилица/друга азбука, докато е
-        // избран английски или испански език, директната заявка към Wikipedia
-        // с оригиналния въведен текст ще се провали (404), защото няма статия
-        // с такова заглавие на съответната Wikipedia. За да разрешим това,
-        // правим обратно геокодиране (по lat/lon) на избрания език, за да
-        // получим локализираното име на града и го използваме за Wikipedia.
+        let displayName = geoData.results[0].formatted;
+        let country = geoData.results[0].components.country || '';
         const wikiLang = currentLang;
+        // За точното заглавие на статията в Wikipedia на избрания език (напр.
+        // "London" -> "Londres" на испански) най-надеждният източник е
+        // Wikidata: всеки град има уникален Wikidata ID (връща се от OpenCage
+        // в annotations.wikidata) и запис "sitelinks" с точното заглавие за
+        // всяка езикова версия на Wikipedia. Транслитерация на компонентите
+        // от геокодирането (напр. components.city) не е достатъчно надеждна,
+        // защото понякога връща различно/неофициално име (напр. "Gran Londres"
+        // вместо "Londres").
         let cityNameForWiki = city;
+        const wikidataId = geoData.results[0].annotations && geoData.results[0].annotations.wikidata;
+        let gotNameFromWikidata = false;
+        if (wikidataId) {
+            try {
+                const wdResp = await fetch(`https://www.wikidata.org/wiki/Special:EntityData/${wikidataId}.json`);
+                if (wdResp.ok) {
+                    const wdData = await wdResp.json();
+                    const entity = wdData.entities && wdData.entities[wikidataId];
+                    const siteKey = `${wikiLang}wiki`;
+                    const sitelinkTitle = entity && entity.sitelinks && entity.sitelinks[siteKey] && entity.sitelinks[siteKey].title;
+                    if (sitelinkTitle) {
+                        cityNameForWiki = sitelinkTitle;
+                        displayName = sitelinkTitle;
+                        gotNameFromWikidata = true;
+                    }
+                }
+            } catch (e) { /* при грешка ще ползваме резервния метод по-долу */ }
+        }
+        // Резервен метод (ако няма Wikidata ID или заявката се провали):
+        // обратно геокодиране на избрания език, за да вземем локализирано
+        // име на града и държавата.
         try {
             const reverseGeoResp = await fetch(`https://api.opencagedata.com/geocode/v1/json?q=${lat}+${lon}&key=${openCageApiKey}&language=${wikiLang}&limit=1`);
             const reverseGeoData = await reverseGeoResp.json();
             if (reverseGeoData.results && reverseGeoData.results.length) {
                 const comp = reverseGeoData.results[0].components;
-                cityNameForWiki = comp.city || comp.town || comp.village || comp.municipality
-                    || reverseGeoData.results[0].formatted.split(',')[0];
+                if (!gotNameFromWikidata) {
+                    cityNameForWiki = comp.city || comp.town || comp.village || comp.municipality
+                        || reverseGeoData.results[0].formatted.split(',')[0];
+                    displayName = cityNameForWiki;
+                }
+                // Държавата винаги идва от обратното геокодиране на избрания език
+                country = comp.country || country;
             }
-        } catch (e) { /* при грешка използваме оригиналното име */ }
+        } catch (e) { /* при грешка използваме оригиналните стойности */ }
         // Вземи кратко описание от Wikipedia API
         let cityDescription = '';
         try {
