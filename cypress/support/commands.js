@@ -13,13 +13,21 @@ Cypress.Commands.add('stubWeatherApis', () => {
     } else if (req.url.includes('hourly=temperature_2m')) {
       // The hourly-forecast endpoint expects data within the next 48h from "now",
       // so it is generated relative to the current time instead of a static fixture.
-      const toISOHour = (d) => d.toISOString().slice(0, 13) + ':00';
+      // Open-Meteo returns local (timezone=auto) time strings without a "Z" suffix,
+      // and app.js parses them with `new Date(...)`, which interprets a string
+      // without "Z" as local time. So we must build the string from local date
+      // parts (not toISOString, which is UTC) to avoid a timezone-offset mismatch
+      // that could push the generated hours outside the 48h filter window.
+      const toLocalISOHour = (d) => {
+        const pad = (n) => String(n).padStart(2, '0');
+        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:00:00`;
+      };
       const hour1 = new Date(Date.now() + 60 * 60 * 1000);
       hour1.setMinutes(0, 0, 0);
       const hour2 = new Date(hour1.getTime() + 60 * 60 * 1000);
       req.reply({
         hourly: {
-          time: [toISOHour(hour1), toISOHour(hour2)],
+          time: [toLocalISOHour(hour1), toLocalISOHour(hour2)],
           weathercode: [1, 2],
           temperature_2m: [15, 16],
           wind_speed_10m: [10, 11],
