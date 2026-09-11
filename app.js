@@ -68,6 +68,8 @@ const LANGS = {
     }
 };
 let currentLang = 'bg';
+let lastSearchedCity = '';
+let currentView = 'main'; // 'main' | 'daily' | 'hourly'
 
 function setLang(lang) {
     currentLang = lang;
@@ -94,75 +96,37 @@ document.addEventListener('DOMContentLoaded', () => {
     ['langBg','langEn','langEs'].forEach(id => {
         const btn = document.getElementById(id);
         if (btn) {
-            btn.onclick = () => {
+            btn.onclick = async () => {
                 setLang(id === 'langBg' ? 'bg' : id === 'langEn' ? 'en' : 'es');
+                // Ако вече има избран град, презареждаме цялата информация на новия език,
+                // запазвайки текущия изглед (основна/7-дневна/почасова)
+                if (lastSearchedCity) {
+                    const viewToRestore = currentView;
+                    await getWeather(true);
+                    if (viewToRestore === 'daily' && typeof window.__renderDailyForecast === 'function') {
+                        window.__renderDailyForecast();
+                    } else if (viewToRestore === 'hourly' && typeof window.__renderHourlyForecast === 'function') {
+                        window.__renderHourlyForecast();
+                    }
+                }
             };
         }
     });
 });
 
-// --- Динамичен превод на вече заредената секция ---
-function translateCurrentSection() {
-    // Ако има резултат за град
-    const resultDiv = document.getElementById('weatherResult');
-    if (!resultDiv || !resultDiv.innerHTML.trim()) return;
-    // Ако има city-info-panel (основна секция)
-    const cityPanel = resultDiv.querySelector('.city-info-panel');
-    if (cityPanel) {
-        // Превеждаме бутони
-        const btnDaily = cityPanel.querySelector('#btnDaily');
-        const btnHourly = cityPanel.querySelector('#btnHourly');
-        if (btnDaily) btnDaily.textContent = LANGS[currentLang].daily;
-        if (btnHourly) btnHourly.textContent = LANGS[currentLang].hourly;
-        // Превеждаме текущото време
-        const nowDiv = cityPanel.querySelector('.current-weather');
-        if (nowDiv) {
-            // Извличаме стойности от текущия HTML
-            const match = nowDiv.innerHTML.match(/([-+]?\d+\.?\d*)°C.*?(\d+\.?\d*)\s*\w+\s*([A-ZА-Я]+|[A-Z]{1,3}|-),.*?(\d+|няма данни)%/);
-            if (match) {
-                const temp = match[1];
-                const wind = match[2];
-                const windDir = match[3];
-                const humidity = match[4];
-                // Превеждаме посоката
-                let windDirText = windDir;
-                // Ако е на кирилица или латиница, намираме индекса и превеждаме
-                let idx = LANGS.bg.windDirs.indexOf(windDir);
-                if (idx === -1) idx = LANGS.en.windDirs.indexOf(windDir);
-                if (idx === -1) idx = LANGS.es.windDirs.indexOf(windDir);
-                if (idx !== -1) windDirText = LANGS[currentLang].windDirs[idx];
-                nowDiv.innerHTML = `<b>${LANGS[currentLang].now}:</b> <span style="font-size:1.5em;">${temp}°C</span>, ${LANGS[currentLang].wind}: ${wind} ${LANGS[currentLang].windUnit} ${windDirText}, ${LANGS[currentLang].humidity}: ${humidity}%`;
-            }
-        }
-    }
-    // Превеждаме 7-дневна прогноза
-    const forecastContainer = document.getElementById('forecastContainer');
-    if (forecastContainer && forecastContainer.innerHTML.includes(LANGS.bg.max) || forecastContainer.innerHTML.includes(LANGS.en.max) || forecastContainer.innerHTML.includes(LANGS.es.max)) {
-        forecastContainer.innerHTML = forecastContainer.innerHTML
-            .replace(/Макс|Max|Máx/g, LANGS[currentLang].max)
-            .replace(/Мин|Min|Mín/g, LANGS[currentLang].min)
-            .replace(/Валежи|Precip\.|Precip\./g, LANGS[currentLang].precip);
-    }
-    // Превеждаме почасова прогноза
-    if (forecastContainer && forecastContainer.innerHTML.includes('Валежи') || forecastContainer.innerHTML.includes('Precip.') || forecastContainer.innerHTML.includes('Precip.')) {
-        forecastContainer.innerHTML = forecastContainer.innerHTML
-            .replace(/Валежи|Precip\.|Precip\./g, LANGS[currentLang].precip);
-    }
-    // Превеждаме бутон Назад
-    const backBtn = forecastContainer ? forecastContainer.querySelector('button') : null;
-    if (backBtn && (backBtn.textContent === LANGS.bg.back || backBtn.textContent === LANGS.en.back || backBtn.textContent === LANGS.es.back)) {
-        backBtn.textContent = LANGS[currentLang].back;
-    }
-}
+// Помощна функция (оставена за съвместимост, вече не се използва за парсене)
+function translateCurrentSection() {}
 
 // --- Модифициран getWeather ---
-async function getWeather() {
-    const city = document.getElementById('cityInput').value.trim();
+async function getWeather(isRelang) {
+    const city = isRelang ? lastSearchedCity : document.getElementById('cityInput').value.trim();
     const resultDiv = document.getElementById('weatherResult');
     if (!city) {
         resultDiv.textContent = LANGS[currentLang].searchPlaceholder;
         return;
     }
+    lastSearchedCity = city;
+    if (!isRelang) currentView = 'main';
     resultDiv.textContent = LANGS[currentLang].loading;
     try {
         // 1. Вземи координати от OpenCage
@@ -260,6 +224,7 @@ async function getWeather() {
 
         // --- Нови функции за показване на режими ---
         function showCityMain() {
+            currentView = 'main';
             document.querySelector('.city-info-panel').style.display = '';
             document.getElementById('forecastContainer').innerHTML = '';
             document.querySelector('.city-info-panel').querySelector('#btnDaily').style.display = '';
@@ -275,6 +240,7 @@ async function getWeather() {
         }
         // Функция за визуализация на 7-дневна прогноза
         function renderDailyForecast() {
+            currentView = 'daily';
             document.querySelector('.city-info-panel').style.display = 'none';
             let dailyHtml = `<b>${LANGS[currentLang].daily}:</b><br>`;
             dailyHtml += '<div style="display: flex; flex-wrap: wrap; gap: 10px; justify-content: center;">';
@@ -298,6 +264,7 @@ async function getWeather() {
         }
         // Функция за визуализация на почасова прогноза (48ч от сега)
         async function renderHourlyForecast() {
+            currentView = 'hourly';
             document.querySelector('.city-info-panel').style.display = 'none';
             let hourlyHtml = `<b>${LANGS[currentLang].hourly} (48ч):</b><br>`;
             let lastDate = '';
@@ -354,6 +321,10 @@ async function getWeather() {
         showCityMain();
         document.getElementById('btnDaily').onclick = renderDailyForecast;
         document.getElementById('btnHourly').onclick = renderHourlyForecast;
+        // Излагаме функциите глобално, за да могат да се извикат при смяна на език
+        window.__renderDailyForecast = renderDailyForecast;
+        window.__renderHourlyForecast = renderHourlyForecast;
+        window.__showCityMain = showCityMain;
     } catch (err) {
         resultDiv.textContent = LANGS[currentLang].error;
     }
