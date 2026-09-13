@@ -240,7 +240,7 @@ async function getWeather(isRelang) {
             cityInfoHtml += `<div style="margin:10px 0;"><img src="${cityImageUrl}" alt="${city}" style="max-width:100%;height:auto;border-radius:12px;box-shadow:0 2px 8px #b3d8f733;max-height:260px;object-fit:cover;"></div>`;
         }
         if (cityDescription) {
-            cityInfoHtml += `<div style=\"font-size:0.98em;color:#444;margin-bottom:8px;\">${cityDescription}</div>`;
+            cityInfoHtml += `<div style=\"font-size:0.98em;color:#fff;margin-bottom:8px;\">${cityDescription}</div>`;
         }
         // Времето в момента
         let currentWeatherHtml = '';
