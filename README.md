@@ -2,6 +2,8 @@
 
 A modern, multilingual weather forecast web application built with vanilla JavaScript, HTML, and CSS. The app provides real-time weather information for cities worldwide, with support for **Bulgarian**, **English**, and **Spanish** languages.
 
+**Live site:** https://zla71.github.io/Weather_app_website/
+
 ## Features
 
 ### 🌍 Core Functionality
@@ -55,6 +57,13 @@ Weather_app_website/
 ```
 
 ## How to Use
+
+### Live site
+The app is hosted on GitHub Pages:
+
+https://zla71.github.io/Weather_app_website/
+
+Pushes to `master` deploy automatically via `.github/workflows/deploy-github-pages.yml`. The first time, set **Settings → Pages → Source** to **GitHub Actions**.
 
 ### Installation
 1. Clone the repository:
@@ -194,6 +203,24 @@ Potential improvements:
 - [ ] Dark mode theme
 - [ ] More language options
 
+## End-to-End Testing (Cypress)
+
+The app has an automated Cypress test suite covering the homepage, language switcher, and city search flow (7-day/hourly forecasts, back navigation, and logo navigation). All external APIs (OpenCage, Open-Meteo, Wikipedia, Nominatim) are stubbed with `cy.intercept`, so the tests run deterministically and offline.
+
+### Setup
+```bash
+npm install
+npx cypress install   # downloads the Cypress binary (requires internet access)
+```
+
+### Running the tests
+```bash
+npm test            # starts a local static server and runs Cypress headlessly
+npm run cypress:open  # interactive mode (requires the app to be served, e.g. `npm start`)
+```
+
+Test files live in `cypress/e2e/`, fixtures in `cypress/fixtures/`, and shared setup (including the `cy.stubWeatherApis()` command) in `cypress/support/`.
+
 ## Notes
 
 - No API keys required for Open-Meteo and Nominatim
@@ -212,4 +239,4 @@ This project is available on GitHub. Feel free to use and modify as needed.
 ---
 
 **Last Updated**: 2026  
-**Branch**: feature/EOL-6-make-translations-to-english-spanish
+**Branch**: feature/EOL-12-make-hosting
