@@ -265,13 +265,13 @@ async function getWeather(isRelang) {
             }
         } catch(e) {}
         cityInfoHtml += currentWeatherHtml;
-        cityInfoHtml += `<div style="margin:18px 0 10px 0;">
-            <button id="btnDaily" style="margin-right:8px;">${LANGS[currentLang].daily}</button>
+        cityInfoHtml += `<div class="forecast-mode-buttons">
+            <button id="btnDaily">${LANGS[currentLang].daily}</button>
             <button id="btnHourly">${LANGS[currentLang].hourly}</button>
         </div>`;
         cityInfoHtml += '</div>';
-        cityInfoHtml += `<div style="margin:10px 0 16px 0;display:flex;justify-content:center;">
-            <iframe width="320" height="180" style="border-radius:10px;border:1.5px solid #b3d8f7;box-shadow:0 2px 8px #b3d8f733;" loading="lazy"
+        cityInfoHtml += `<div class="city-map-wrap">
+            <iframe class="city-map" loading="lazy" title="${displayName.split(',')[0]}"
                 src="https://www.openstreetmap.org/export/embed.html?layer=mapnik&marker=${lat}%2C${lon}&zoom=12&mlat=${lat}&mlon=${lon}"></iframe>
         </div>`;
         cityInfoHtml += `<div id="forecastContainer"></div>`;
@@ -298,7 +298,7 @@ async function getWeather(isRelang) {
             currentView = 'daily';
             document.querySelector('.city-info-panel').style.display = 'none';
             let dailyHtml = `<b>${LANGS[currentLang].daily}:</b><br>`;
-            dailyHtml += '<div style="display: flex; flex-wrap: wrap; gap: 10px; justify-content: center;">';
+            dailyHtml += '<div class="daily-grid">';
             for (let i = 0; i < meteoData.daily.time.length; i++) {
                 const date = new Date(meteoData.daily.time[i]);
                 const code = meteoData.daily.weathercode[i];

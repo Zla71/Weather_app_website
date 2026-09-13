@@ -2,17 +2,17 @@
 <html lang="bg">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Прогноза за времето</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <header class="main-header">
         <a href="#" class="logo" id="logo">Прогноза за времето</a>
-        <div class="lang-switcher" style="display:flex;align-items:center;gap:8px;margin-right:16px;">
-            <button id="langBg" title="Български" style="background:none;border:none;cursor:pointer;font-size:1.6em;">🇧🇬</button>
-            <button id="langEn" title="English" style="background:none;border:none;cursor:pointer;font-size:1.6em;">🇬🇧</button>
-            <button id="langEs" title="Español" style="background:none;border:none;cursor:pointer;font-size:1.6em;">🇪🇸</button>
+        <div class="lang-switcher">
+            <button id="langBg" type="button" title="Български">🇧🇬</button>
+            <button id="langEn" type="button" title="English">🇬🇧</button>
+            <button id="langEs" type="button" title="Español">🇪🇸</button>
         </div>
         <form id="headerSearchForm" class="header-search" autocomplete="off" onsubmit="return false;">
             <input type="text" id="cityInput" placeholder="Въведи град">
