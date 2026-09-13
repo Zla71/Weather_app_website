@@ -2,6 +2,8 @@
 
 A modern, multilingual weather forecast web application built with vanilla JavaScript, HTML, and CSS. The app provides real-time weather information for cities worldwide, with support for **Bulgarian**, **English**, and **Spanish** languages.
 
+**Live site:** https://zla71.github.io/Weather_app_website/
+
 ## Features
 
 ### 🌍 Core Functionality
@@ -55,6 +57,13 @@ Weather_app_website/
 ```
 
 ## How to Use
+
+### Live site
+The app is hosted on GitHub Pages:
+
+https://zla71.github.io/Weather_app_website/
+
+Pushes to `master` deploy automatically via `.github/workflows/deploy-github-pages.yml`. The first time, set **Settings → Pages → Source** to **GitHub Actions**.
 
 ### Installation
 1. Clone the repository:
@@ -230,4 +239,4 @@ This project is available on GitHub. Feel free to use and modify as needed.
 ---
 
 **Last Updated**: 2026  
-**Branch**: feature/EOL-6-make-translations-to-english-spanish
+**Branch**: feature/EOL-12-make-hosting
