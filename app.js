@@ -20,6 +20,8 @@ const LANGS = {
         min: 'Мин',
         max: 'Макс',
         precip: 'Валежи',
+        rateLimitMsg: 'Тъй като в момента не можем да ви дадем информация за най-големите градове в Европа, вижте прогнозата в града, в който сте:',
+        locationDenied: 'Не успяхме да определим местоположението ви. Моля, потърсете град ръчно.',
         windDirs: ['С', 'ССИ', 'СИ', 'ИСИ', 'И', 'ИЮИ', 'ЮИ', 'ЮЮИ', 'Ю', 'ЮЮЗ', 'ЮЗ', 'ЗЮЗ', 'З', 'ЗСЗ', 'СЗ', 'ССЗ', 'С']
     },
     en: {
@@ -42,6 +44,8 @@ const LANGS = {
         min: 'Min',
         max: 'Max',
         precip: 'Precip.',
+        rateLimitMsg: 'Since we currently cannot show you the weather for the largest European capitals, here is the forecast for your location:',
+        locationDenied: 'We could not determine your location. Please search for a city manually.',
         windDirs: ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW', 'N']
     },
     es: {
@@ -64,6 +68,8 @@ const LANGS = {
         min: 'Mín',
         max: 'Máx',
         precip: 'Precip.',
+        rateLimitMsg: 'Como en este momento no podemos mostrarte el tiempo de las mayores capitales europeas, aquí tienes el pronóstico de tu ubicación:',
+        locationDenied: 'No pudimos determinar tu ubicación. Por favor, busca una ciudad manualmente.',
         windDirs: ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSO', 'SO', 'OSO', 'O', 'ONO', 'NO', 'NNO', 'N']
     }
 };
@@ -108,6 +114,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     } else if (viewToRestore === 'hourly' && typeof window.__renderHourlyForecast === 'function') {
                         window.__renderHourlyForecast();
                     }
+                } else {
+                    // Ако сме на началната страница, презареждаме и нея, за да
+                    // се преведат надписите на столиците/съобщението за
+                    // резервния режим по местоположение.
+                    await showCapitalsWeather();
                 }
             };
         }
@@ -435,33 +446,59 @@ const capitals = [
 
 async function showCapitalsWeather() {
     const grid = document.getElementById('capitalsWeather');
-    grid.innerHTML = 'Зареждане...';
+    const subtitleEl = document.querySelector('.subtitle');
+    if (subtitleEl) subtitleEl.style.display = '';
+    grid.innerHTML = LANGS[currentLang].loading;
+    // Проследяваме дали някоя от заявките към Nominatim е блокирана заради
+    // твърде много заявки (HTTP 429), за да превключим на резервен режим,
+    // показващ прогнозата по местоположението на устройството.
+    let rateLimited = false;
     const promises = capitals.map(async (cap) => {
-        // Вземи координати
-        const geoResp = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(cap.en)}`);
-        const geoData = await geoResp.json();
-        if (!geoData.length) return '';
-        const lat = geoData[0].lat;
-        const lon = geoData[0].lon;
-        // Вземи текуща прогноза
-        const meteoResp = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&lang=bg`);
-        const meteoData = await meteoResp.json();
-        if (!meteoData.current_weather) return '';
-        const temp = Math.round(meteoData.current_weather.temperature);
-        const code = meteoData.current_weather.weathercode;
-        const icon = getMeteoIcon(code);
-        const windSpeed = meteoData.current_weather.windspeed;
-        const windDir = meteoData.current_weather.winddirection;
-        const windDirText = windDirectionText(windDir);
-        // Добавяме data-атрибут с името на града (на български)
-        return `<div class="capital-card" data-city="${cap.name}">
-            <div class="city">${cap.name}</div>
-            <div class="temp">${icon} ${temp}°C</div>
-            <div class="desc">${windSpeed} км/ч, ${windDir}° (${windDirText})</div>
-        </div>`;
+        try {
+            // Вземи координати
+            const geoResp = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(cap.en)}`);
+            if (geoResp.status === 429) {
+                rateLimited = true;
+                return '';
+            }
+            const geoData = await geoResp.json();
+            if (!geoData.length) return '';
+            const lat = geoData[0].lat;
+            const lon = geoData[0].lon;
+            // Вземи текуща прогноза
+            const meteoResp = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&lang=bg`);
+            if (meteoResp.status === 429) {
+                rateLimited = true;
+                return '';
+            }
+            const meteoData = await meteoResp.json();
+            if (!meteoData.current_weather) return '';
+            const temp = Math.round(meteoData.current_weather.temperature);
+            const code = meteoData.current_weather.weathercode;
+            const icon = getMeteoIcon(code);
+            const windSpeed = meteoData.current_weather.windspeed;
+            const windDir = meteoData.current_weather.winddirection;
+            const windDirText = windDirectionText(windDir);
+            // Добавяме data-атрибут с името на града (на български)
+            return `<div class="capital-card" data-city="${cap.name}">
+                <div class="city">${cap.name}</div>
+                <div class="temp">${icon} ${temp}°C</div>
+                <div class="desc">${windSpeed} км/ч, ${windDir}° (${windDirText})</div>
+            </div>`;
+        } catch (e) {
+            return '';
+        }
     });
     const results = await Promise.all(promises);
-    grid.innerHTML = results.join('');
+    const successfulResults = results.filter(r => r);
+    // Ако сме получили 429 или нито една от заявките не е успяла (вероятно
+    // поради ограничение на заявките), показваме прогнозата по
+    // местоположението на устройството вместо частичен/празен списък.
+    if (rateLimited || successfulResults.length === 0) {
+        await showLocationFallbackWeather();
+        return;
+    }
+    grid.innerHTML = successfulResults.join('');
     // Добавяме event listener-и за избор на град
     Array.from(grid.querySelectorAll('.capital-card')).forEach(card => {
         card.style.cursor = 'pointer';
@@ -471,6 +508,76 @@ async function showCapitalsWeather() {
             showSearch();
             await getWeather();
         });
+    });
+}
+
+// Резервен режим: когато не можем да заредим прогнозата за столиците
+// (например заради HTTP 429 от Nominatim), показваме съобщение и
+// прогнозата за текущото местоположение на потребителя (чрез Geolocation API).
+async function showLocationFallbackWeather() {
+    const grid = document.getElementById('capitalsWeather');
+    const subtitleEl = document.querySelector('.subtitle');
+    if (subtitleEl) subtitleEl.style.display = 'none';
+    if (!navigator.geolocation) {
+        grid.innerHTML = `<div style="text-align:center;">${LANGS[currentLang].locationDenied}</div>`;
+        return;
+    }
+    grid.innerHTML = LANGS[currentLang].loading;
+    navigator.geolocation.getCurrentPosition(async (position) => {
+        try {
+            const lat = position.coords.latitude;
+            const lon = position.coords.longitude;
+            // Локализирано име на града/държавата чрез OpenCage на текущия език
+            const openCageApiKey = 'e6c4ae76e7b84e66a3ebd42e00ed99b5';
+            let cityName = '';
+            let countryName = '';
+            try {
+                const reverseGeoResp = await fetch(`https://api.opencagedata.com/geocode/v1/json?q=${lat}+${lon}&key=${openCageApiKey}&language=${currentLang}&limit=1`);
+                const reverseGeoData = await reverseGeoResp.json();
+                if (reverseGeoData.results && reverseGeoData.results.length) {
+                    const comp = reverseGeoData.results[0].components;
+                    cityName = comp.city || comp.town || comp.village || comp.municipality
+                        || reverseGeoData.results[0].formatted.split(',')[0];
+                    countryName = comp.country || '';
+                }
+            } catch (e) { /* ще покажем само времето, без имена, ако това се провали */ }
+            const meteoResp = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&lang=${currentLang === 'bg' ? 'bg' : currentLang}`);
+            const meteoData = await meteoResp.json();
+            if (!meteoData.current_weather) {
+                grid.innerHTML = `<div style="text-align:center;">${LANGS[currentLang].error}</div>`;
+                return;
+            }
+            const temp = Math.round(meteoData.current_weather.temperature);
+            const code = meteoData.current_weather.weathercode;
+            const icon = getMeteoIcon(code);
+            const windSpeed = meteoData.current_weather.windspeed;
+            const windDir = meteoData.current_weather.winddirection;
+            const windDirText = windDirectionText(windDir);
+            const cityLabel = cityName ? `${cityName}${countryName ? ' (' + countryName + ')' : ''}` : '';
+            grid.innerHTML = `
+                <div style="flex-basis:100%;width:100%;text-align:center;margin-bottom:14px;font-size:1.05em;color:#2471a3;">
+                    ${LANGS[currentLang].rateLimitMsg}
+                </div>
+                <div class="capital-card" data-city="${cityName}" style="margin:0 auto;">
+                    ${cityLabel ? `<div class="city">${cityLabel}</div>` : ''}
+                    <div class="temp">${icon} ${temp}°C</div>
+                    <div class="desc">${windSpeed} км/ч, ${windDir}° (${windDirText})</div>
+                </div>`;
+            const card = grid.querySelector('.capital-card');
+            if (card && cityName) {
+                card.style.cursor = 'pointer';
+                card.addEventListener('click', async function() {
+                    document.getElementById('cityInput').value = cityName;
+                    showSearch();
+                    await getWeather();
+                });
+            }
+        } catch (e) {
+            grid.innerHTML = `<div style="text-align:center;">${LANGS[currentLang].error}</div>`;
+        }
+    }, () => {
+        // Потребителят е отказал достъп до местоположението или има грешка
+        grid.innerHTML = `<div style="text-align:center;">${LANGS[currentLang].locationDenied}</div>`;
     });
 }
 
