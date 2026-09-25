@@ -310,7 +310,7 @@ async function getWeather(isRelang) {
             }
             if (currentData.current_weather) {
                 const c = currentData.current_weather;
-                const icon = getMeteoIcon(c.weathercode);
+                const icon = getMeteoIcon(c.weathercode, c.is_day);
                 const windDir = c.winddirection;
                 currentWeatherHtml = `<div class=\"current-weather\" style=\"margin:12px 0 8px 0;font-size:1.2em;\"><b>${LANGS[currentLang].now}:</b> <span style=\"font-size:1.5em;\">${icon} ${c.temperature}°C</span>, ${LANGS[currentLang].wind}: ${c.windspeed} ${LANGS[currentLang].windUnit} ${windDirectionText(windDir)}, ${LANGS[currentLang].humidity}: ${humidity}%</div>`;
             }
@@ -379,18 +379,44 @@ async function getWeather(isRelang) {
             const startISO = now.toISOString().slice(0, 13) + ':00';
             const end = new Date(now.getTime() + 48 * 60 * 60 * 1000);
             const endISO = end.toISOString().slice(0, 13) + ':00';
+            // Заявката за начална/крайна дата се базира на текущото време
+            // в браузъра (UTC/локална зона на устройството), но градът може
+            // да е в съвсем различна часова зона (напр. Токио). За да сме
+            // сигурни, че разполагаме с изгрев/залез за всички дати, които
+            // ще срещнем в 48-часовия прозорец в часовата зона НА ГРАДА,
+            // разширяваме диапазона с по един ден отпред и отзад.
+            const queryStartDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+            const queryEndDate = new Date(now.getTime() + 72 * 60 * 60 * 1000);
             try {
-                const hourlyResp = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,weathercode,precipitation,wind_speed_10m,wind_direction_10m,relative_humidity_2m&timezone=auto&start_date=${startISO.slice(0,10)}&end_date=${endISO.slice(0,10)}&lang=${meteoLang}`);
+                const hourlyResp = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,weathercode,precipitation,wind_speed_10m,wind_direction_10m,relative_humidity_2m,is_day&daily=sunrise,sunset&timezone=auto&start_date=${queryStartDate.toISOString().slice(0,10)}&end_date=${queryEndDate.toISOString().slice(0,10)}&lang=${meteoLang}`);
                 const hourlyData = await hourlyResp.json();
                 if (!hourlyData.hourly) {
                     hourlyHtml += LANGS[currentLang].noHourly;
                 } else {
+                    // Изчисляваме ден/нощ локално по изгрев/залез за всеки ден,
+                    // за да избегнем евентуални несъответствия в полето is_day
+                    // на API-то около полунощ (напр. при смяна на датата).
+                    const sunTimesByDate = {};
+                    if (hourlyData.daily && hourlyData.daily.time) {
+                        hourlyData.daily.time.forEach((dateStr, idx) => {
+                            sunTimesByDate[dateStr] = {
+                                sunrise: hourlyData.daily.sunrise ? new Date(hourlyData.daily.sunrise[idx]) : null,
+                                sunset: hourlyData.daily.sunset ? new Date(hourlyData.daily.sunset[idx]) : null
+                            };
+                        });
+                    }
                     const nowTime = now.getTime();
                     for (let i = 0; i < hourlyData.hourly.time.length; i++) {
                         const hour = new Date(hourlyData.hourly.time[i]);
                         if (hour.getTime() < nowTime || hour.getTime() > nowTime + 48*60*60*1000) continue;
                         const code = hourlyData.hourly.weathercode[i];
-                        const iconUrl = getMeteoIcon(code);
+                        const hourDateKey = hourlyData.hourly.time[i].slice(0, 10);
+                        const sunTimes = sunTimesByDate[hourDateKey];
+                        let isDay = hourlyData.hourly.is_day ? hourlyData.hourly.is_day[i] : 1;
+                        if (sunTimes && sunTimes.sunrise && sunTimes.sunset) {
+                            isDay = (hour >= sunTimes.sunrise && hour < sunTimes.sunset) ? 1 : 0;
+                        }
+                        const iconUrl = getMeteoIcon(code, isDay);
                         const temp = hourlyData.hourly.temperature_2m[i];
                         const windSpeed = hourlyData.hourly.wind_speed_10m ? hourlyData.hourly.wind_speed_10m[i] : '-';
                         const windDir = hourlyData.hourly.wind_direction_10m ? hourlyData.hourly.wind_direction_10m[i] : '-';
@@ -437,9 +463,11 @@ async function getWeather(isRelang) {
 }
 
 // Open-Meteo weather code to icon
-function getMeteoIcon(code) {
-    // Emoji mapping за основните Open-Meteo weather codes
-    const emojiMap = {
+function getMeteoIcon(code, isDay) {
+    // isDay: 1 = ден, 0 = нощ (по подразбиране приемаме ден, ако не е подадено)
+    const night = isDay === 0 || isDay === false;
+    // Emoji mapping за основните Open-Meteo weather codes (дневни варианти)
+    const emojiMapDay = {
         0: '☀️', // ясно
         1: '🌤️', // предимно ясно
         2: '⛅', // разкъсана облачност
@@ -469,7 +497,17 @@ function getMeteoIcon(code) {
         96: '⛈️',
         99: '⛈️',
     };
-    return emojiMap[code] || '❔';
+    // Нощни варианти за кодовете, при които има видима разлика (ясно/малко облачно)
+    const emojiMapNight = {
+        0: '🌙', // ясно небе през нощта
+        1: '🌙', // предимно ясно през нощта
+        2: '☁️', // разкъсана облачност през нощта
+        3: '☁️', // облачно (същото като през деня)
+    };
+    if (night && emojiMapNight[code] !== undefined) {
+        return emojiMapNight[code];
+    }
+    return emojiMapDay[code] || '❔';
 }
 
 // Глобална функция за текстово описание на посоката на вятъра
@@ -538,7 +576,7 @@ async function showLocationFallbackWeather() {
             }
             const temp = Math.round(meteoData.current_weather.temperature);
             const code = meteoData.current_weather.weathercode;
-            const icon = getMeteoIcon(code);
+            const icon = getMeteoIcon(code, meteoData.current_weather.is_day);
             const windSpeed = meteoData.current_weather.windspeed;
             const windDir = meteoData.current_weather.winddirection;
             const windDirText = windDirectionText(windDir);
