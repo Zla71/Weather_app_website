@@ -20,6 +20,8 @@ const LANGS = {
         min: 'Мин',
         max: 'Макс',
         precip: 'Валежи',
+        sunrise: 'Изгрев',
+        sunset: 'Залез',
         rateLimitMsg: 'Тъй като в момента не можем да ви дадем информация за най-големите градове в Европа, вижте прогнозата в града, в който сте:',
         locationDenied: 'Не успяхме да определим местоположението ви. Моля, потърсете град ръчно.',
         windDirs: ['С', 'ССИ', 'СИ', 'ИСИ', 'И', 'ИЮИ', 'ЮИ', 'ЮЮИ', 'Ю', 'ЮЮЗ', 'ЮЗ', 'ЗЮЗ', 'З', 'ЗСЗ', 'СЗ', 'ССЗ', 'С']
@@ -44,6 +46,8 @@ const LANGS = {
         min: 'Min',
         max: 'Max',
         precip: 'Precip.',
+        sunrise: 'Sunrise',
+        sunset: 'Sunset',
         rateLimitMsg: 'Since we currently cannot show you the weather for the largest European capitals, here is the forecast for your location:',
         locationDenied: 'We could not determine your location. Please search for a city manually.',
         windDirs: ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW', 'N']
@@ -68,6 +72,8 @@ const LANGS = {
         min: 'Mín',
         max: 'Máx',
         precip: 'Precip.',
+        sunrise: 'Amanecer',
+        sunset: 'Atardecer',
         rateLimitMsg: 'Como en este momento no podemos mostrarte el tiempo de las mayores capitales europeas, aquí tienes el pronóstico de tu ubicación:',
         locationDenied: 'No pudimos determinar tu ubicación. Por favor, busca una ciudad manualmente.',
         windDirs: ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSO', 'SO', 'OSO', 'O', 'ONO', 'NO', 'NNO', 'N']
@@ -406,9 +412,40 @@ async function getWeather(isRelang) {
                         });
                     }
                     const nowTime = now.getTime();
+                    // Събираме почасовите точки и събитията за изгрев/залез в
+                    // един списък, сортиран по време, за да можем да вмъкнем
+                    // "Изгрев"/"Залез" на точното им място между кутийките
+                    // за кръглите часове.
+                    const timelineItems = [];
                     for (let i = 0; i < hourlyData.hourly.time.length; i++) {
                         const hour = new Date(hourlyData.hourly.time[i]);
                         if (hour.getTime() < nowTime || hour.getTime() > nowTime + 48*60*60*1000) continue;
+                        timelineItems.push({ type: 'hour', time: hour, index: i });
+                    }
+                    Object.keys(sunTimesByDate).forEach((dateKey) => {
+                        const times = sunTimesByDate[dateKey];
+                        [['sunrise', times.sunrise], ['sunset', times.sunset]].forEach(([kind, t]) => {
+                            if (t && t.getTime() >= nowTime && t.getTime() <= nowTime + 48*60*60*1000) {
+                                timelineItems.push({ type: kind, time: t });
+                            }
+                        });
+                    });
+                    timelineItems.sort((a, b) => a.time.getTime() - b.time.getTime());
+                    for (const item of timelineItems) {
+                        const hour = item.time;
+                        const dateStr = hour.toLocaleDateString(currentLang === 'bg' ? 'bg-BG' : currentLang === 'es' ? 'es-ES' : 'en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+                        if (dateStr !== lastDate) {
+                            hourlyHtml += `<div style=\"grid-column: 1 / -1; flex-basis:100%;font-weight:bold;font-size:1.1em;margin:10px 0 0 0;\">${dateStr}</div>`;
+                            lastDate = dateStr;
+                        }
+                        if (item.type === 'sunrise' || item.type === 'sunset') {
+                            const label = item.type === 'sunrise' ? LANGS[currentLang].sunrise : LANGS[currentLang].sunset;
+                            const emoji = item.type === 'sunrise' ? '🌅' : '🌇';
+                            const timeStr = hour.toLocaleTimeString(currentLang === 'bg' ? 'bg-BG' : currentLang === 'es' ? 'es-ES' : 'en-GB', { hour: '2-digit', minute: '2-digit' });
+                            hourlyHtml += `<div class=\"sun-event animate-fade-in\" style=\"grid-column: 1 / -1; flex-basis:100%;text-align:center;font-size:1em;margin:6px 0;color:#ff8a00;\">${emoji} ${label} ${timeStr}ч</div>`;
+                            continue;
+                        }
+                        const i = item.index;
                         const code = hourlyData.hourly.weathercode[i];
                         const hourDateKey = hourlyData.hourly.time[i].slice(0, 10);
                         const sunTimes = sunTimesByDate[hourDateKey];
@@ -422,11 +459,6 @@ async function getWeather(isRelang) {
                         const windDir = hourlyData.hourly.wind_direction_10m ? hourlyData.hourly.wind_direction_10m[i] : '-';
                         const humidity = hourlyData.hourly.relative_humidity_2m ? hourlyData.hourly.relative_humidity_2m[i] : '-';
                         const precipitation = hourlyData.hourly.precipitation ? hourlyData.hourly.precipitation[i] : '-';
-                        const dateStr = hour.toLocaleDateString(currentLang === 'bg' ? 'bg-BG' : currentLang === 'es' ? 'es-ES' : 'en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-                        if (dateStr !== lastDate) {
-                            hourlyHtml += `<div style=\"grid-column: 1 / -1; flex-basis:100%;font-weight:bold;font-size:1.1em;margin:10px 0 0 0;\">${dateStr}</div>`;
-                            lastDate = dateStr;
-                        }
                         hourlyHtml += `<div class=\"forecast-hour animate-fade-in\">
                             <div style=\"font-size:1.2em;font-weight:bold;\">${hour.getHours()}:00</div>
                             <span style=\"font-size:2.2em;\">${iconUrl}</span>
@@ -497,12 +529,19 @@ function getMeteoIcon(code, isDay) {
         96: '⛈️',
         99: '⛈️',
     };
-    // Нощни варианти за кодовете, при които има видима разлика (ясно/малко облачно)
+    // Нощни варианти за кодовете, при които има видима разлика (комбинации
+    // със слънце през деня стават комбинации с луна през нощта)
     const emojiMapNight = {
         0: '🌙', // ясно небе през нощта
         1: '🌙', // предимно ясно през нощта
         2: '☁️', // разкъсана облачност през нощта
         3: '☁️', // облачно (същото като през деня)
+        51: '🌧️', // слаб дъжд (без слънце през нощта)
+        53: '🌧️',
+        55: '🌧️',
+        80: '🌧️', // превалявания (без слънце през нощта)
+        81: '🌧️',
+        82: '🌧️',
     };
     if (night && emojiMapNight[code] !== undefined) {
         return emojiMapNight[code];
