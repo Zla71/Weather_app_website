@@ -239,4 +239,3 @@ This project is available on GitHub. Feel free to use and modify as needed.
 ---
 
 **Last Updated**: 2026  
-**Branch**: feature/EOL-12-make-hosting

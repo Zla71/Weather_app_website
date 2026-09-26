@@ -318,7 +318,7 @@ async function getWeather(isRelang) {
                 const c = currentData.current_weather;
                 const icon = getMeteoIcon(c.weathercode, c.is_day);
                 const windDir = c.winddirection;
-                currentWeatherHtml = `<div class=\"current-weather\" style=\"margin:12px 0 8px 0;font-size:1.2em;\"><b>${LANGS[currentLang].now}:</b> <span style=\"font-size:1.5em;\">${icon} ${c.temperature}°C</span>, ${LANGS[currentLang].wind}: ${c.windspeed} ${LANGS[currentLang].windUnit} ${windDirectionText(windDir)}, ${LANGS[currentLang].humidity}: ${humidity}%</div>`;
+                currentWeatherHtml = `<div class=\"current-weather\" style=\"margin:12px 0 8px 0;font-size:1.2em;\"><b>${LANGS[currentLang].now}:</b> <span style=\"font-size:1.5em;\">${icon} ${Math.round(c.temperature)}°C</span>, ${LANGS[currentLang].wind}: ${c.windspeed} ${LANGS[currentLang].windUnit} ${windDirectionText(windDir)}, ${LANGS[currentLang].humidity}: ${humidity}%</div>`;
             }
         } catch(e) {}
         cityInfoHtml += currentWeatherHtml;
@@ -363,9 +363,9 @@ async function getWeather(isRelang) {
                 dailyHtml += `<div class=\"forecast-day animate-fade-in\">
                     <b>${date.toLocaleDateString(currentLang === 'bg' ? 'bg-BG' : currentLang === 'es' ? 'es-ES' : 'en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</b><br>
                     <span style=\"font-size: 2em;\">${iconUrl}</span>
-                    <br>${LANGS[currentLang].max}: <b>${meteoData.daily.temperature_2m_max[i]}°C</b><br>
-                    ${LANGS[currentLang].min}: ${meteoData.daily.temperature_2m_min[i]}°C<br>
-                    ${LANGS[currentLang].precip}: ${meteoData.daily.precipitation_sum[i]} mm<br>
+                    <br>${LANGS[currentLang].max}: <b>${Math.round(meteoData.daily.temperature_2m_max[i])}°C</b><br>
+                    ${LANGS[currentLang].min}: ${Math.round(meteoData.daily.temperature_2m_min[i])}°C<br>
+                    ${LANGS[currentLang].precip}: ${Math.round(meteoData.daily.precipitation_sum[i])} mm<br>
                 </div>`;
             }
             dailyHtml += '</div>';
@@ -454,7 +454,7 @@ async function getWeather(isRelang) {
                             isDay = (hour >= sunTimes.sunrise && hour < sunTimes.sunset) ? 1 : 0;
                         }
                         const iconUrl = getMeteoIcon(code, isDay);
-                        const temp = hourlyData.hourly.temperature_2m[i];
+                        const temp = Math.round(hourlyData.hourly.temperature_2m[i]);
                         const windSpeed = hourlyData.hourly.wind_speed_10m ? hourlyData.hourly.wind_speed_10m[i] : '-';
                         const windDir = hourlyData.hourly.wind_direction_10m ? hourlyData.hourly.wind_direction_10m[i] : '-';
                         const humidity = hourlyData.hourly.relative_humidity_2m ? hourlyData.hourly.relative_humidity_2m[i] : '-';
