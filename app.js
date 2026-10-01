@@ -419,6 +419,29 @@ async function getWeather(isRelang) {
                 if (!hourlyData.hourly) {
                     hourlyHtml += LANGS[currentLang].noHourly;
                 } else {
+                    // Open-Meteo връща часовите низове (hourly.time, daily.sunrise/
+                    // sunset) като "наивни" низове без часова зона (напр.
+                    // "2026-10-01T14:00"), които JS парсира чрез new Date(...)
+                    // като ЛОКАЛНО време НА БРАУЗЪРА. Ако градът е в друга
+                    // часова зона (напр. Токио, докато браузърът е в София),
+                    // сравнението с реалното "сега" на устройството дава грешен
+                    // резултат. За да сравняваме коректно спрямо локалното
+                    // време НА ГРАДА, изчисляваме "сега" в същата (изкуствена)
+                    // координатна система: вземаме реалното UTC време, прибавяме
+                    // utc_offset_seconds (връщано от API-то), за да получим
+                    // часовниковите стойности на града, и после ги подаваме на
+                    // конструктора new Date(y,m,d,h,mi,s) по начина, по който
+                    // браузърът би парснал наивен низ със същите стойности.
+                    const offsetSec = typeof hourlyData.utc_offset_seconds === 'number' ? hourlyData.utc_offset_seconds : 0;
+                    const cityNowUtcBased = new Date(Date.now() + offsetSec * 1000);
+                    const cityNowForCompare = new Date(
+                        cityNowUtcBased.getUTCFullYear(),
+                        cityNowUtcBased.getUTCMonth(),
+                        cityNowUtcBased.getUTCDate(),
+                        cityNowUtcBased.getUTCHours(),
+                        cityNowUtcBased.getUTCMinutes(),
+                        cityNowUtcBased.getUTCSeconds()
+                    );
                     // Изчисляваме ден/нощ локално по изгрев/залез за всеки ден,
                     // за да избегнем евентуални несъответствия в полето is_day
                     // на API-то около полунощ (напр. при смяна на датата).
@@ -431,7 +454,7 @@ async function getWeather(isRelang) {
                             };
                         });
                     }
-                    const nowTime = now.getTime();
+                    const nowTime = cityNowForCompare.getTime();
                     // Събираме почасовите точки и събитията за изгрев/залез в
                     // един списък, сортиран по време, за да можем да вмъкнем
                     // "Изгрев"/"Залез" на точното им място между кутийките
