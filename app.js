@@ -24,6 +24,7 @@ const LANGS = {
         sunset: 'Залез',
         rateLimitMsg: 'Тъй като в момента не можем да ви дадем информация за най-големите градове в Европа, вижте прогнозата в града, в който сте:',
         locationDenied: 'Не успяхме да определим местоположението ви. Моля, потърсете град ръчно.',
+        worldCitiesSubtitle: 'Времето в някои от големите столици',
         windDirs: ['С', 'ССИ', 'СИ', 'ИСИ', 'И', 'ИЮИ', 'ЮИ', 'ЮЮИ', 'Ю', 'ЮЮЗ', 'ЮЗ', 'ЗЮЗ', 'З', 'ЗСЗ', 'СЗ', 'ССЗ', 'С']
     },
     en: {
@@ -50,6 +51,7 @@ const LANGS = {
         sunset: 'Sunset',
         rateLimitMsg: 'Since we currently cannot show you the weather for the largest European capitals, here is the forecast for your location:',
         locationDenied: 'We could not determine your location. Please search for a city manually.',
+        worldCitiesSubtitle: 'Weather in some of the largest capitals',
         windDirs: ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW', 'N']
     },
     es: {
@@ -76,6 +78,7 @@ const LANGS = {
         sunset: 'Atardecer',
         rateLimitMsg: 'Como en este momento no podemos mostrarte el tiempo de las mayores capitales europeas, aquí tienes el pronóstico de tu ubicación:',
         locationDenied: 'No pudimos determinar tu ubicación. Por favor, busca una ciudad manualmente.',
+        worldCitiesSubtitle: 'El tiempo en algunas de las grandes capitales',
         windDirs: ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSO', 'SO', 'OSO', 'O', 'ONO', 'NO', 'NNO', 'N']
     }
 };
@@ -601,24 +604,90 @@ function windDirectionText(deg) {
 
 // --- НАЧАЛНА СТРАНИЦА И НАВИГАЦИЯ ---
 
-// Списък с най-големите европейски столици
-const capitals = [
-    { name: 'Лондон', en: 'London', country: 'UK' },
-    { name: 'Париж', en: 'Paris', country: 'France' },
-    { name: 'Берлин', en: 'Berlin', country: 'Germany' },
-    { name: 'Мадрид', en: 'Madrid', country: 'Spain' },
-    { name: 'Рим', en: 'Rome', country: 'Italy' },
-    { name: 'Виена', en: 'Vienna', country: 'Austria' },
-    { name: 'Будапеща', en: 'Budapest', country: 'Hungary' },
-    { name: 'Атина', en: 'Athens', country: 'Greece' },
-    { name: 'Букурещ', en: 'Bucharest', country: 'Romania' },
-    { name: 'София', en: 'Sofia', country: 'Bulgaria' }
+// Списък с едни от най-големите градове в света (по население), показван
+// на началната страница, когато потребителят не сподели местоположението си.
+// Координатите са зададени директно (без геокодиране чрез Nominatim), за да
+// избегнем грешки от ограничението за честота на заявките (rate limiting)
+// на Nominatim API, което преди причиняваше случайни грешки при паралелни
+// заявки за всички градове наведнъж.
+const worldCities = [
+    { names: { bg: 'Токио', en: 'Tokyo', es: 'Tokio' }, en: 'Tokyo', country: 'Japan', lat: 35.6762, lon: 139.6503 },
+    { names: { bg: 'Делхи', en: 'Delhi', es: 'Delhi' }, en: 'Delhi', country: 'India', lat: 28.7041, lon: 77.1025 },
+    { names: { bg: 'Шанхай', en: 'Shanghai', es: 'Shanghái' }, en: 'Shanghai', country: 'China', lat: 31.2304, lon: 121.4737 },
+    { names: { bg: 'Сао Паулу', en: 'Sao Paulo', es: 'São Paulo' }, en: 'Sao Paulo', country: 'Brazil', lat: -23.5505, lon: -46.6333 },
+    { names: { bg: 'Мексико Сити', en: 'Mexico City', es: 'Ciudad de México' }, en: 'Mexico City', country: 'Mexico', lat: 19.4326, lon: -99.1332 },
+    { names: { bg: 'Кайро', en: 'Cairo', es: 'El Cairo' }, en: 'Cairo', country: 'Egypt', lat: 30.0444, lon: 31.2357 },
+    { names: { bg: 'Мумбай', en: 'Mumbai', es: 'Bombay' }, en: 'Mumbai', country: 'India', lat: 19.0760, lon: 72.8777 },
+    { names: { bg: 'Пекин', en: 'Beijing', es: 'Pekín' }, en: 'Beijing', country: 'China', lat: 39.9042, lon: 116.4074 },
+    { names: { bg: 'Ню Йорк', en: 'New York', es: 'Nueva York' }, en: 'New York', country: 'USA', lat: 40.7128, lon: -74.0060 },
+    { names: { bg: 'Лондон', en: 'London', es: 'Londres' }, en: 'London', country: 'UK', lat: 51.5074, lon: -0.1278 }
 ];
 
 async function showCapitalsWeather() {
-    // Началната страница вече показва само прогнозата за текущото
-    // местоположение на потребителя, вместо списък с европейски столици.
+    // Началната страница показва прогнозата за текущото местоположение на
+    // потребителя (ако е споделено), а при отказ/грешка — списък с едни от
+    // най-големите градове в света.
     await showLocationFallbackWeather();
+}
+
+// Показва прогноза за най-големите градове в света (резервен режим,
+// когато потребителят не сподели местоположението си или то не може да
+// бъде определено).
+async function showWorldCitiesWeather() {
+    const grid = document.getElementById('capitalsWeather');
+    const subtitleEl = document.querySelector('.subtitle');
+    if (subtitleEl) {
+        subtitleEl.style.display = '';
+        subtitleEl.textContent = LANGS[currentLang].worldCitiesSubtitle;
+    }
+    grid.innerHTML = LANGS[currentLang].loading;
+    // Помощна функция за извличане на времето за даден град с до 2 опита,
+    // за да избегнем случайни мрежови грешки/прекъсвания при паралелни заявки.
+    async function fetchCityWeather(c, attempt) {
+        try {
+            const meteoResp = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${c.lat}&longitude=${c.lon}&current_weather=true&lang=${currentLang === 'bg' ? 'bg' : currentLang}`);
+            if (!meteoResp.ok) throw new Error('bad response');
+            const meteoData = await meteoResp.json();
+            if (!meteoData.current_weather) throw new Error('no current_weather');
+            const temp = Math.round(meteoData.current_weather.temperature);
+            const code = meteoData.current_weather.weathercode;
+            const icon = getMeteoIcon(code, meteoData.current_weather.is_day);
+            const windSpeed = meteoData.current_weather.windspeed;
+            const windDir = meteoData.current_weather.winddirection;
+            const windDirText = windDirectionText(windDir);
+            const localizedName = c.names[currentLang] || c.names.en;
+            return `<div class="capital-card" data-city="${localizedName}">
+                <div class="city">${localizedName}</div>
+                <div class="temp">${icon} ${temp}°C</div>
+                <div class="desc">${windSpeed} км/ч, ${windDir}° (${windDirText})</div>
+            </div>`;
+        } catch (e) {
+            if (!attempt) {
+                return fetchCityWeather(c, 1);
+            }
+            return '';
+        }
+    }
+    const promises = worldCities.map((c) => fetchCityWeather(c, 0));
+    const results = await Promise.all(promises);
+    const successfulResults = results.filter(r => r);
+    if (successfulResults.length === 0) {
+        // Вместо съобщение за грешка показваме празен/тих резултат, за да не
+        // плашим потребителя при временен проблем с API-то на началната
+        // страница — той все пак може да търси град ръчно.
+        grid.innerHTML = '';
+        return;
+    }
+    grid.innerHTML = successfulResults.join('');
+    Array.from(grid.querySelectorAll('.capital-card')).forEach(card => {
+        card.style.cursor = 'pointer';
+        card.addEventListener('click', async function() {
+            const cityName = card.getAttribute('data-city');
+            document.getElementById('cityInput').value = cityName;
+            showSearch();
+            await getWeather();
+        });
+    });
 }
 
 // Показваме прогнозата за текущото местоположение на потребителя
@@ -626,9 +695,12 @@ async function showCapitalsWeather() {
 async function showLocationFallbackWeather() {
     const grid = document.getElementById('capitalsWeather');
     const subtitleEl = document.querySelector('.subtitle');
-    if (subtitleEl) subtitleEl.style.display = '';
+    if (subtitleEl) {
+        subtitleEl.style.display = '';
+        subtitleEl.textContent = LANGS[currentLang].subtitle;
+    }
     if (!navigator.geolocation) {
-        grid.innerHTML = `<div style="text-align:center;">${LANGS[currentLang].locationDenied}</div>`;
+        await showWorldCitiesWeather();
         return;
     }
     grid.innerHTML = LANGS[currentLang].loading;
@@ -653,7 +725,10 @@ async function showLocationFallbackWeather() {
             const meteoResp = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&lang=${currentLang === 'bg' ? 'bg' : currentLang}`);
             const meteoData = await meteoResp.json();
             if (!meteoData.current_weather) {
-                grid.innerHTML = `<div style="text-align:center;">${LANGS[currentLang].error}</div>`;
+                // При проблем с времето за текущото местоположение показваме
+                // резервния списък с най-големите градове в света, вместо
+                // съобщение за грешка.
+                await showWorldCitiesWeather();
                 return;
             }
             const temp = Math.round(meteoData.current_weather.temperature);
@@ -679,11 +754,16 @@ async function showLocationFallbackWeather() {
                 });
             }
         } catch (e) {
-            grid.innerHTML = `<div style="text-align:center;">${LANGS[currentLang].error}</div>`;
+            // При грешка в извличането на времето за местоположението на
+            // потребителя показваме резервния списък с най-големите градове
+            // в света, вместо съобщение за грешка.
+            await showWorldCitiesWeather();
         }
-    }, () => {
-        // Потребителят е отказал достъп до местоположението или има грешка
-        grid.innerHTML = `<div style="text-align:center;">${LANGS[currentLang].locationDenied}</div>`;
+    }, async () => {
+        // Потребителят е отказал достъп до местоположението или има грешка —
+        // показваме прогноза за най-големите градове в света вместо съобщение
+        // за грешка.
+        await showWorldCitiesWeather();
     });
 }
 
