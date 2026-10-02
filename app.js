@@ -12,6 +12,7 @@ const LANGS = {
         back: 'Назад',
         daily: '7-дневна прогноза',
         hourly: 'Почасова прогноза',
+        hours48: '48ч',
         loading: 'Зареждане...',
         notFound: 'Градът не е намерен.',
         noForecast: 'Няма прогноза за този град.',
@@ -39,6 +40,7 @@ const LANGS = {
         back: 'Back',
         daily: '7-day forecast',
         hourly: 'Hourly forecast',
+        hours48: '48h',
         loading: 'Loading...',
         notFound: 'City not found.',
         noForecast: 'No forecast for this city.',
@@ -66,6 +68,7 @@ const LANGS = {
         back: 'Atrás',
         daily: 'Pronóstico de 7 días',
         hourly: 'Pronóstico por horas',
+        hours48: '48h',
         loading: 'Cargando...',
         notFound: 'Ciudad no encontrada.',
         noForecast: 'No hay pronóstico para esta ciudad.',
@@ -350,7 +353,7 @@ async function getWeather(isRelang) {
             <button id="btnHourly">${LANGS[currentLang].hourly}</button>
         </div>`;
         cityInfoHtml += '</div>';
-        cityInfoHtml += `<div class="city-map-wrap">
+        cityInfoHtml += `<div class="city-map-wrap" id="cityMapWrap">
             <iframe class="city-map" loading="lazy" title="${displayName.split(',')[0]}"
                 src="https://www.openstreetmap.org/export/embed.html?layer=mapnik&marker=${lat}%2C${lon}&zoom=12&mlat=${lat}&mlon=${lon}"></iframe>
         </div>`;
@@ -364,14 +367,27 @@ async function getWeather(isRelang) {
             document.getElementById('forecastContainer').innerHTML = '';
             document.querySelector('.city-info-panel').querySelector('#btnDaily').style.display = '';
             document.querySelector('.city-info-panel').querySelector('#btnHourly').style.display = '';
+            const mapWrap = document.getElementById('cityMapWrap');
+            if (mapWrap) mapWrap.style.display = '';
         }
         function showBackButton(onClick) {
+            // Скриваме световната карта и показваме заглавие с името на
+            // града (центрирано, с по-голям шрифт) и бутона "Назад" над прогнозата.
+            const mapWrap = document.getElementById('cityMapWrap');
+            if (mapWrap) mapWrap.style.display = 'none';
             let fc = document.getElementById('forecastContainer');
+            let headerBar = document.createElement('div');
+            headerBar.style = 'display:flex;align-items:center;position:relative;margin-bottom:14px;min-height:40px;';
             let backBtn = document.createElement('button');
             backBtn.textContent = LANGS[currentLang].back;
-            backBtn.style = 'margin:18px 0 0 0;display:block;';
+            backBtn.style = 'margin:0;position:relative;z-index:1;';
             backBtn.onclick = onClick;
-            fc.appendChild(backBtn);
+            let cityTitle = document.createElement('strong');
+            cityTitle.style = 'font-size:1.8em;position:absolute;left:0;right:0;text-align:center;pointer-events:none;';
+            cityTitle.textContent = displayName.split(',')[0];
+            headerBar.appendChild(backBtn);
+            headerBar.appendChild(cityTitle);
+            fc.insertBefore(headerBar, fc.firstChild);
         }
         // Функция за визуализация на 7-дневна прогноза
         function renderDailyForecast() {
@@ -394,14 +410,14 @@ async function getWeather(isRelang) {
             dailyHtml += '</div>';
             document.getElementById('forecastContainer').innerHTML = dailyHtml;
             showBackButton(() => {
-                showCityMain();
+                history.back();
             });
         }
         // Функция за визуализация на почасова прогноза (48ч от сега)
         async function renderHourlyForecast() {
             currentView = 'hourly';
             document.querySelector('.city-info-panel').style.display = 'none';
-            let hourlyHtml = `<b>${LANGS[currentLang].hourly} (48ч):</b><br>`;
+            let hourlyHtml = `<b>${LANGS[currentLang].hourly} (${LANGS[currentLang].hours48}):</b><br>`;
             let lastDate = '';
             hourlyHtml += '<div class="hourly-grid">';
             const now = new Date();
@@ -518,19 +534,25 @@ async function getWeather(isRelang) {
                 hourlyHtml += '</div>';
                 document.getElementById('forecastContainer').innerHTML = hourlyHtml;
                 showBackButton(() => {
-                    showCityMain();
+                    history.back();
                 });
             } catch (e) {
                 document.getElementById('forecastContainer').innerHTML = LANGS[currentLang].error;
                 showBackButton(() => {
-                    showCityMain();
+                    history.back();
                 });
             }
         }
         // Първоначално показваме само инфо за града и бутоните
         showCityMain();
-        document.getElementById('btnDaily').onclick = renderDailyForecast;
-        document.getElementById('btnHourly').onclick = renderHourlyForecast;
+        document.getElementById('btnDaily').onclick = () => {
+            renderDailyForecast();
+            pushCityViewState(lastSearchedCity, 'daily');
+        };
+        document.getElementById('btnHourly').onclick = () => {
+            renderHourlyForecast();
+            pushCityViewState(lastSearchedCity, 'hourly');
+        };
         // Излагаме функциите глобално, за да могат да се извикат при смяна на език
         window.__renderDailyForecast = renderDailyForecast;
         window.__renderHourlyForecast = renderHourlyForecast;
@@ -686,6 +708,7 @@ async function showWorldCitiesWeather() {
             document.getElementById('cityInput').value = cityName;
             showSearch();
             await getWeather();
+            pushCityState(cityName);
         });
     });
 }
@@ -751,6 +774,7 @@ async function showLocationFallbackWeather() {
                     document.getElementById('cityInput').value = cityName;
                     showSearch();
                     await getWeather();
+                    pushCityState(cityName);
                 });
             }
         } catch (e) {
@@ -778,26 +802,100 @@ function showSearch() {
     setTimeout(() => { document.getElementById('cityInput').focus(); }, 200);
 }
 
+// --- URL маршрутизация (за бутона "Назад"/"Напред" на браузъра) ---
+// Използваме history.pushState, за да отразяваме текущото състояние
+// (начална страница или избран град) в адреса на браузъра. Така
+// бутонът "Назад" връща към началната страница или към предходния
+// избран град, вместо да напуска сайта.
+function pushHomeState() {
+    history.pushState({ view: 'home' }, '', '#home');
+}
+function pushCityState(cityName) {
+    history.pushState({ view: 'city', city: cityName }, '', `#city/${encodeURIComponent(cityName)}`);
+}
+function pushCityViewState(cityName, viewName) {
+    history.pushState({ view: viewName, city: cityName }, '', `#city/${encodeURIComponent(cityName)}/${viewName}`);
+}
+function replaceHomeState() {
+    history.replaceState({ view: 'home' }, '', '#home');
+}
+function replaceCityState(cityName) {
+    history.replaceState({ view: 'city', city: cityName }, '', `#city/${encodeURIComponent(cityName)}`);
+}
+
+// Обработва навигацията чрез бутоните "Назад"/"Напред" на браузъра.
+window.addEventListener('popstate', async (e) => {
+    const state = e.state;
+    if (!state || state.view === 'home') {
+        showHome();
+    } else if (state.view === 'city') {
+        document.getElementById('cityInput').value = state.city;
+        lastSearchedCity = state.city;
+        showSearch();
+        await getWeather(true);
+    } else if (state.view === 'daily' || state.view === 'hourly') {
+        document.getElementById('cityInput').value = state.city;
+        lastSearchedCity = state.city;
+        showSearch();
+        await getWeather(true);
+        if (state.view === 'daily' && typeof window.__renderDailyForecast === 'function') {
+            window.__renderDailyForecast();
+        } else if (state.view === 'hourly' && typeof window.__renderHourlyForecast === 'function') {
+            window.__renderHourlyForecast();
+        }
+    }
+});
+
 // Навигация
 window.addEventListener('DOMContentLoaded', async () => {
-    showHome();
-    await detectAndSetLanguageByLocation();
-    showCapitalsWeather();
+    // Проверяваме дали адресът вече сочи към конкретен град (напр. при
+    // презареждане на страницата или споделен линк), евентуално и към
+    // конкретния изглед (7-дневна/почасова прогноза), и зареждаме директно
+    // съответния изглед.
+    const initialHashMatch = location.hash.match(/^#city\/([^/]+)(?:\/(daily|hourly))?$/);
+    if (initialHashMatch) {
+        const initialCity = decodeURIComponent(initialHashMatch[1]);
+        const initialView = initialHashMatch[2];
+        if (initialView) {
+            history.replaceState({ view: initialView, city: initialCity }, '', `#city/${encodeURIComponent(initialCity)}/${initialView}`);
+        } else {
+            replaceCityState(initialCity);
+        }
+        document.getElementById('cityInput').value = initialCity;
+        await detectAndSetLanguageByLocation();
+        showSearch();
+        await getWeather();
+        if (initialView === 'daily' && typeof window.__renderDailyForecast === 'function') {
+            window.__renderDailyForecast();
+        } else if (initialView === 'hourly' && typeof window.__renderHourlyForecast === 'function') {
+            window.__renderHourlyForecast();
+        }
+    } else {
+        replaceHomeState();
+        showHome();
+        await detectAndSetLanguageByLocation();
+        showCapitalsWeather();
+    }
     document.getElementById('logo').onclick = (e) => {
         e.preventDefault();
         showHome();
+        pushHomeState();
     };
     // Търсачката в хедъра работи винаги
     const cityInput = document.getElementById('cityInput');
     const searchBtn = document.getElementById('searchBtn');
     searchBtn.addEventListener('click', async () => {
+        const city = cityInput.value.trim();
         showSearch();
         await getWeather();
+        if (city) pushCityState(city);
     });
     cityInput.addEventListener('keypress', async function(e) {
         if (e.key === 'Enter') {
+            const city = cityInput.value.trim();
             showSearch();
             await getWeather();
+            if (city) pushCityState(city);
         }
     });
 });
