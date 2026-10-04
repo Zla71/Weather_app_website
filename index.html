@@ -17,6 +17,7 @@
         <form id="headerSearchForm" class="header-search" autocomplete="off" onsubmit="return false;">
             <input type="text" id="cityInput" placeholder="Въведи град">
             <button id="searchBtn" type="button">Търси</button>
+            <button id="radarBtn" type="button">Радар</button>
         </form>
     </header>
     <main id="mainContent">
@@ -33,7 +34,40 @@
                 <div id="weatherResult"></div>
             </div>
         </section>
+        <section id="radarSection" style="display:none;">
+            <div class="container">
+                <div class="radar-header">
+                    <button id="radarBackBtn" type="button">Назад</button>
+                    <strong id="radarTitle" class="radar-title">Радар</strong>
+                </div>
+                <div id="radarMapWrap" class="radar-map-wrap">
+                    <div id="radarMap" class="radar-map"></div>
+                    <div id="radarTimeLabel" class="radar-time-label"></div>
+                </div>
+                <div class="radar-controls">
+                    <button id="radarPlayBtn" type="button">▶</button>
+                    <input type="range" id="radarSlider" min="0" max="0" value="0" step="1">
+                </div>
+                <div class="radar-legend" id="radarLegend">
+                    <div class="radar-legend-group">
+                        <span class="radar-legend-label" id="radarLegendRain">Дъжд</span>
+                        <span class="radar-legend-swatch" style="background: linear-gradient(90deg, #2ecc71, #f1c40f, #e67e22, #e74c3c, #b71540);"></span>
+                    </div>
+                    <div class="radar-legend-group">
+                        <span class="radar-legend-label" id="radarLegendSnow">Сняг</span>
+                        <span class="radar-legend-swatch" style="background: linear-gradient(90deg, #aee9f7, #4fc3f7, #2196f3, #1a56c4);"></span>
+                    </div>
+                    <div class="radar-legend-group">
+                        <span class="radar-legend-label" id="radarLegendMixed">Смесени/заледяващи</span>
+                        <span class="radar-legend-swatch" style="background: linear-gradient(90deg, #f3a6f7, #e066e8, #c239d6, #9b1fb0);"></span>
+                    </div>
+                </div>
+            </div>
+        </section>
     </main>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
     <script src="app.js"></script>
 </body>
 </html>
+
