@@ -27,6 +27,13 @@ const LANGS = {
         locationDenied: 'Не успяхме да определим местоположението ви. Моля, потърсете град ръчно.',
         worldCitiesSubtitle: 'Времето в някои от големите столици',
         recentCitiesTitle: 'Последно разглеждани',
+        radarBtn: 'Радар',
+        radarTitle: 'Радар за времето',
+        radarLoading: 'Зареждане на радара...',
+        radarError: 'Радарът не можа да бъде зареден.',
+        radarLegendRain: 'Дъжд',
+        radarLegendSnow: 'Сняг',
+        radarLegendMixed: 'Смесени/заледяващи',
         windDirs: ['С', 'ССИ', 'СИ', 'ИСИ', 'И', 'ИЮИ', 'ЮИ', 'ЮЮИ', 'Ю', 'ЮЮЗ', 'ЮЗ', 'ЗЮЗ', 'З', 'ЗСЗ', 'СЗ', 'ССЗ', 'С']
     },
     en: {
@@ -56,6 +63,13 @@ const LANGS = {
         locationDenied: 'We could not determine your location. Please search for a city manually.',
         worldCitiesSubtitle: 'Weather in some of the largest capitals',
         recentCitiesTitle: 'Recently viewed',
+        radarBtn: 'Radar',
+        radarTitle: 'Weather radar',
+        radarLoading: 'Loading radar...',
+        radarError: 'The radar could not be loaded.',
+        radarLegendRain: 'Rain',
+        radarLegendSnow: 'Snow',
+        radarLegendMixed: 'Mixed/freezing',
         windDirs: ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW', 'N']
     },
     es: {
@@ -85,6 +99,13 @@ const LANGS = {
         locationDenied: 'No pudimos determinar tu ubicación. Por favor, busca una ciudad manualmente.',
         worldCitiesSubtitle: 'El tiempo en algunas de las grandes capitales',
         recentCitiesTitle: 'Vistos recientemente',
+        radarBtn: 'Radar',
+        radarTitle: 'Radar meteorológico',
+        radarLoading: 'Cargando radar...',
+        radarError: 'No se pudo cargar el radar.',
+        radarLegendRain: 'Lluvia',
+        radarLegendSnow: 'Nieve',
+        radarLegendMixed: 'Mixta/helada',
         windDirs: ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSO', 'SO', 'OSO', 'O', 'ONO', 'NO', 'NNO', 'N']
     }
 };
@@ -98,6 +119,12 @@ function setLang(lang) {
     document.querySelector('.logo').textContent = LANGS[lang].title;
     document.getElementById('cityInput').placeholder = LANGS[lang].searchPlaceholder;
     document.getElementById('searchBtn').textContent = LANGS[lang].searchBtn;
+    if (document.getElementById('radarBtn')) document.getElementById('radarBtn').textContent = LANGS[lang].radarBtn;
+    if (document.getElementById('radarTitle')) document.getElementById('radarTitle').textContent = LANGS[lang].radarTitle;
+    if (document.getElementById('radarBackBtn')) document.getElementById('radarBackBtn').textContent = LANGS[lang].back;
+    if (document.getElementById('radarLegendRain')) document.getElementById('radarLegendRain').textContent = LANGS[lang].radarLegendRain;
+    if (document.getElementById('radarLegendSnow')) document.getElementById('radarLegendSnow').textContent = LANGS[lang].radarLegendSnow;
+    if (document.getElementById('radarLegendMixed')) document.getElementById('radarLegendMixed').textContent = LANGS[lang].radarLegendMixed;
     const subtitle = document.querySelector('.subtitle');
     if (subtitle) subtitle.textContent = LANGS[lang].subtitle;
     // Превеждаме бутони, ако сме на страница на град
@@ -921,12 +948,150 @@ async function showRecentCitiesWeather() {
 function showHome() {
     document.getElementById('homeSection').style.display = '';
     document.getElementById('searchSection').style.display = 'none';
+    const radarSection = document.getElementById('radarSection');
+    if (radarSection) radarSection.style.display = 'none';
+    stopRadarAnimation();
     showRecentCitiesWeather();
 }
 function showSearch() {
     document.getElementById('homeSection').style.display = 'none';
     document.getElementById('searchSection').style.display = '';
+    const radarSection = document.getElementById('radarSection');
+    if (radarSection) radarSection.style.display = 'none';
+    stopRadarAnimation();
     setTimeout(() => { document.getElementById('cityInput').focus(); }, 200);
+}
+
+// --- Радар на времето (анимирани облачност/валежи чрез RainViewer) ---
+let radarMapInstance = null;
+let radarTileLayer = null;
+let radarFrames = [];
+let radarFrameIndex = 0;
+let radarPlaying = false;
+let radarTimerId = null;
+
+function stopRadarAnimation() {
+    radarPlaying = false;
+    if (radarTimerId) {
+        clearInterval(radarTimerId);
+        radarTimerId = null;
+    }
+    const playBtn = document.getElementById('radarPlayBtn');
+    if (playBtn) playBtn.textContent = '▶';
+}
+
+function formatRadarFrameTime(unixSeconds) {
+    const d = new Date(unixSeconds * 1000);
+    const locale = currentLang === 'bg' ? 'bg-BG' : currentLang === 'es' ? 'es-ES' : 'en-GB';
+    return d.toLocaleString(locale, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+}
+
+function setRadarFrame(index) {
+    if (!radarFrames.length || !radarMapInstance) return;
+    radarFrameIndex = ((index % radarFrames.length) + radarFrames.length) % radarFrames.length;
+    const frame = radarFrames[radarFrameIndex];
+    // Цветова схема 6 (NEXRAD Level III) на RainViewer показва ясно
+    // разграничени, по-ярки цветове за различните видове валежи: зелено/
+    // жълто/оранжево/червено за дъжд (по интензитет), синьо/лилаво за сняг
+    // и розово/магента за смесени/заледяващи валежи. Параметърът "1_1"
+    // включва изглаждане (smooth=1) и отделен цвят за сняг (snow=1).
+    const tileUrl = `https://tilecache.rainviewer.com${frame.path}/256/{z}/{x}/{y}/6/1_1.png`;
+    if (radarTileLayer) {
+        radarMapInstance.removeLayer(radarTileLayer);
+    }
+    radarTileLayer = L.tileLayer(tileUrl, {
+        tileSize: 256,
+        opacity: 0.85,
+        zIndex: 10
+    }).addTo(radarMapInstance);
+    const slider = document.getElementById('radarSlider');
+    if (slider) slider.value = String(radarFrameIndex);
+    const timeLabel = document.getElementById('radarTimeLabel');
+    if (timeLabel) timeLabel.textContent = formatRadarFrameTime(frame.time);
+}
+
+function startRadarAnimation() {
+    if (!radarFrames.length) return;
+    radarPlaying = true;
+    const playBtn = document.getElementById('radarPlayBtn');
+    if (playBtn) playBtn.textContent = '⏸';
+    radarTimerId = setInterval(() => {
+        setRadarFrame(radarFrameIndex + 1);
+    }, 600);
+}
+
+async function initRadarMap(lat, lon) {
+    const mapEl = document.getElementById('radarMap');
+    if (!mapEl) return;
+    if (radarMapInstance) {
+        radarMapInstance.remove();
+        radarMapInstance = null;
+        radarTileLayer = null;
+    }
+    radarMapInstance = L.map(mapEl, { zoomControl: true, attributionControl: false }).setView([lat, lon], 6);
+    // Ползваме стандартните (безплатни, без нужда от API ключ) тайлове на
+    // OpenStreetMap. CartoDB вече изисква API ключ за тяхната CDN, затова
+    // не ги ползваме повече.
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        subdomains: 'abc',
+        maxZoom: 19
+    }).addTo(radarMapInstance);
+    L.marker([lat, lon]).addTo(radarMapInstance);
+}
+
+// Показва секцията с радара на валежите/облачността (минало + прогноза за
+// напред до 2 дни) чрез безплатния API на RainViewer. Ако е подадена
+// позиция (lat/lon), центрираме картата там; иначе ползваме местоположението
+// на потребителя, а при липса/отказ — център на Европа.
+async function showRadar(lat, lon) {
+    document.getElementById('homeSection').style.display = 'none';
+    document.getElementById('searchSection').style.display = 'none';
+    const radarSection = document.getElementById('radarSection');
+    radarSection.style.display = '';
+    const timeLabel = document.getElementById('radarTimeLabel');
+    if (timeLabel) timeLabel.textContent = LANGS[currentLang].radarLoading;
+    const legendRain = document.getElementById('radarLegendRain');
+    const legendSnow = document.getElementById('radarLegendSnow');
+    const legendMixed = document.getElementById('radarLegendMixed');
+    if (legendRain) legendRain.textContent = LANGS[currentLang].radarLegendRain;
+    if (legendSnow) legendSnow.textContent = LANGS[currentLang].radarLegendSnow;
+    if (legendMixed) legendMixed.textContent = LANGS[currentLang].radarLegendMixed;
+    stopRadarAnimation();
+
+    async function centerAndLoad(centerLat, centerLon) {
+        await initRadarMap(centerLat, centerLon);
+        try {
+            const resp = await fetch('https://api.rainviewer.com/public/weather-maps.json');
+            const data = await resp.json();
+            const past = (data.radar && data.radar.past) || [];
+            const nowcast = (data.radar && data.radar.nowcast) || [];
+            radarFrames = [...past, ...nowcast];
+            if (!radarFrames.length) throw new Error('no frames');
+            const slider = document.getElementById('radarSlider');
+            if (slider) {
+                slider.max = String(radarFrames.length - 1);
+                slider.value = String(radarFrames.length - 1);
+            }
+            // Показваме последния наличен кадър (най-близък до "сега")
+            setRadarFrame(radarFrames.length - 1);
+        } catch (e) {
+            if (timeLabel) timeLabel.textContent = LANGS[currentLang].radarError;
+        }
+    }
+
+    if (typeof lat === 'number' && typeof lon === 'number') {
+        await centerAndLoad(lat, lon);
+        return;
+    }
+    if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(async (position) => {
+            await centerAndLoad(position.coords.latitude, position.coords.longitude);
+        }, async () => {
+            await centerAndLoad(50, 15); // център на Европа като резервен вариант
+        }, { timeout: 8000 });
+    } else {
+        await centerAndLoad(50, 15);
+    }
 }
 
 // --- URL маршрутизация (за бутона "Назад"/"Напред" на браузъра) ---
@@ -970,6 +1135,8 @@ window.addEventListener('popstate', async (e) => {
         } else if (state.view === 'hourly' && typeof window.__renderHourlyForecast === 'function') {
             window.__renderHourlyForecast();
         }
+    } else if (state.view === 'radar') {
+        await showRadar();
     }
 });
 
@@ -1025,6 +1192,37 @@ window.addEventListener('DOMContentLoaded', async () => {
             if (city) pushCityState(city);
         }
     });
+    // Бутон "Радар"
+    const radarBtn = document.getElementById('radarBtn');
+    if (radarBtn) {
+        radarBtn.addEventListener('click', async () => {
+            await showRadar();
+            history.pushState({ view: 'radar' }, '', '#radar');
+        });
+    }
+    const radarBackBtn = document.getElementById('radarBackBtn');
+    if (radarBackBtn) {
+        radarBackBtn.addEventListener('click', () => {
+            history.back();
+        });
+    }
+    const radarPlayBtn = document.getElementById('radarPlayBtn');
+    if (radarPlayBtn) {
+        radarPlayBtn.addEventListener('click', () => {
+            if (radarPlaying) {
+                stopRadarAnimation();
+            } else {
+                startRadarAnimation();
+            }
+        });
+    }
+    const radarSlider = document.getElementById('radarSlider');
+    if (radarSlider) {
+        radarSlider.addEventListener('input', () => {
+            stopRadarAnimation();
+            setRadarFrame(parseInt(radarSlider.value, 10) || 0);
+        });
+    }
 });
 
 // При търсене, винаги показвай searchSection и скривай homeSection
