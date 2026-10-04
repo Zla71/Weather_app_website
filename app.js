@@ -111,7 +111,16 @@ const LANGS = {
 };
 let currentLang = 'en';
 let lastSearchedCity = '';
+// Пазим точните координати на последно избрания/търсен град, за да можем
+// при презареждане на същия изглед (напр. смяна на езика) да презаредим
+// ТОЧНО същия град по координати, вместо да търсим отново по име (което
+// може да върне друго място със същото име в друга държава).
+let lastSearchedCoords = null; // { lat, lon } | null
 let currentView = 'main'; // 'main' | 'daily' | 'hourly'
+// Проследява кой текст трябва да е в главния subtitle на началната
+// страница, за да може setLang да го преведе правилно при смяна на езика,
+// без да го бърка с подзаглавието, показвано при търсене на конкретен град.
+let homeSubtitleMode = null; // 'location' | 'world' | null
 
 function setLang(lang) {
     currentLang = lang;
@@ -125,8 +134,20 @@ function setLang(lang) {
     if (document.getElementById('radarLegendRain')) document.getElementById('radarLegendRain').textContent = LANGS[lang].radarLegendRain;
     if (document.getElementById('radarLegendSnow')) document.getElementById('radarLegendSnow').textContent = LANGS[lang].radarLegendSnow;
     if (document.getElementById('radarLegendMixed')) document.getElementById('radarLegendMixed').textContent = LANGS[lang].radarLegendMixed;
-    const subtitle = document.querySelector('.subtitle');
-    if (subtitle) subtitle.textContent = LANGS[lang].subtitle;
+    const subtitle = document.getElementById('capitalsSubtitle');
+    if (subtitle) {
+        // Ако сме на началната страница, превеждаме правилния подзаглавен
+        // текст според текущия режим (местоположение или резервен списък
+        // със столици), вместо винаги да показваме "Времето във вашето
+        // местоположение".
+        if (homeSubtitleMode === 'world') {
+            subtitle.textContent = LANGS[lang].worldCitiesSubtitle;
+        } else if (homeSubtitleMode === 'location') {
+            subtitle.textContent = LANGS[lang].subtitle;
+        } else {
+            subtitle.textContent = LANGS[lang].subtitle;
+        }
+    }
     // Превеждаме бутони, ако сме на страница на град
     if (document.getElementById('btnDaily')) document.getElementById('btnDaily').textContent = LANGS[lang].daily;
     if (document.getElementById('btnHourly')) document.getElementById('btnHourly').textContent = LANGS[lang].hourly;
@@ -223,30 +244,57 @@ document.addEventListener('DOMContentLoaded', () => {
 function translateCurrentSection() {}
 
 // --- Модифициран getWeather ---
-async function getWeather(isRelang) {
+// explicitCoords: по избор { lat, lon } — когато е подадено (напр. при клик
+// върху карта на град или при смяна на езика за вече избран град),
+// пропускаме търсенето по име и ползваме точно тези координати, за да сме
+// сигурни, че показваме ТОЧНО същия град (избягва объркване между градове
+// със сходни/еднакви имена в различни държави).
+async function getWeather(isRelang, explicitCoords) {
     const city = isRelang ? lastSearchedCity : document.getElementById('cityInput').value.trim();
     const resultDiv = document.getElementById('weatherResult');
-    if (!city) {
+    if (!city && !explicitCoords) {
         resultDiv.textContent = LANGS[currentLang].searchPlaceholder;
         return;
     }
-    lastSearchedCity = city;
+    if (!isRelang) lastSearchedCity = city;
+    // При презареждане заради смяна на езика (isRelang), ако няма изрично
+    // подадени координати, но имаме запазени от предишното зареждане,
+    // ползваме тях, за да презаредим точно същия град.
+    const coordsToUse = explicitCoords || (isRelang ? lastSearchedCoords : null);
     if (!isRelang) currentView = 'main';
     resultDiv.textContent = LANGS[currentLang].loading;
     try {
-        // 1. Вземи координати от OpenCage
+        // 1. Вземи координати от OpenCage (или ползвай вече известните,
+        // ако са подадени/запазени, за да избегнем несигурно търсене по име)
         const openCageApiKey = 'e6c4ae76e7b84e66a3ebd42e00ed99b5';
         // Търсим на съответния език, за да получим по-точни резултати за
         // въведеното от потребителя име (поддържа кирилица и латиница).
         const geoLang = currentLang === 'bg' ? 'bg' : (currentLang === 'es' ? 'es' : 'en');
-        const geoResp = await fetch(`https://api.opencagedata.com/geocode/v1/json?q=${encodeURIComponent(city)}&key=${openCageApiKey}&language=${geoLang}&limit=1`);
-        const geoData = await geoResp.json();
-        if (!geoData.results || !geoData.results.length) {
-            resultDiv.textContent = LANGS[currentLang].notFound;
-            return;
+        let lat, lon, geoData;
+        if (coordsToUse) {
+            lat = coordsToUse.lat;
+            lon = coordsToUse.lon;
+            // Обратно геокодиране по точните координати, за да получим
+            // локализирано име/държава на избрания език (вместо търсене по
+            // име, което може да върне друг град със същото име).
+            const revResp = await fetch(`https://api.opencagedata.com/geocode/v1/json?q=${lat}+${lon}&key=${openCageApiKey}&language=${geoLang}&limit=1`);
+            geoData = await revResp.json();
+            if (!geoData.results || !geoData.results.length) {
+                resultDiv.textContent = LANGS[currentLang].notFound;
+                return;
+            }
+        } else {
+            const geoResp = await fetch(`https://api.opencagedata.com/geocode/v1/json?q=${encodeURIComponent(city)}&key=${openCageApiKey}&language=${geoLang}&limit=1`);
+            geoData = await geoResp.json();
+            if (!geoData.results || !geoData.results.length) {
+                resultDiv.textContent = LANGS[currentLang].notFound;
+                return;
+            }
+            lat = geoData.results[0].geometry.lat;
+            lon = geoData.results[0].geometry.lng;
         }
-        const lat = geoData.results[0].geometry.lat;
-        const lon = geoData.results[0].geometry.lng;
+        lastSearchedCoords = { lat, lon };
+
         let displayName = geoData.results[0].formatted;
         let country = geoData.results[0].components.country || '';
         const wikiLang = currentLang;
@@ -579,11 +627,11 @@ async function getWeather(isRelang) {
         showCityMain();
         document.getElementById('btnDaily').onclick = () => {
             renderDailyForecast();
-            pushCityViewState(lastSearchedCity, 'daily');
+            pushCityViewState(lastSearchedCity, 'daily', lat, lon);
         };
         document.getElementById('btnHourly').onclick = () => {
             renderHourlyForecast();
-            pushCityViewState(lastSearchedCity, 'hourly');
+            pushCityViewState(lastSearchedCity, 'hourly', lat, lon);
         };
         // Излагаме функциите глобално, за да могат да се извикат при смяна на език
         window.__renderDailyForecast = renderDailyForecast;
@@ -689,7 +737,8 @@ async function showCapitalsWeather() {
 // бъде определено).
 async function showWorldCitiesWeather() {
     const grid = document.getElementById('capitalsWeather');
-    const subtitleEl = document.querySelector('.subtitle');
+    const subtitleEl = document.getElementById('capitalsSubtitle');
+    homeSubtitleMode = 'world';
     if (subtitleEl) {
         subtitleEl.style.display = '';
         subtitleEl.textContent = LANGS[currentLang].worldCitiesSubtitle;
@@ -710,7 +759,7 @@ async function showWorldCitiesWeather() {
             const windDir = meteoData.current_weather.winddirection;
             const windDirText = windDirectionText(windDir);
             const localizedName = c.names[currentLang] || c.names.en;
-            return `<div class="capital-card" data-city="${localizedName}">
+            return `<div class="capital-card" data-city="${localizedName}" data-lat="${c.lat}" data-lon="${c.lon}">
                 <div class="city">${localizedName}</div>
                 <div class="temp">${icon} ${temp}°C</div>
                 <div class="desc">${windSpeed} км/ч, ${windDir}° (${windDirText})</div>
@@ -737,89 +786,101 @@ async function showWorldCitiesWeather() {
         card.style.cursor = 'pointer';
         card.addEventListener('click', async function() {
             const cityName = card.getAttribute('data-city');
+            const cardLat = parseFloat(card.getAttribute('data-lat'));
+            const cardLon = parseFloat(card.getAttribute('data-lon'));
             document.getElementById('cityInput').value = cityName;
             showSearch();
-            await getWeather();
-            pushCityState(cityName);
+            // Подаваме точните координати, за да е сигурно, че ще заредим
+            // именно този град, а не друг със същото име.
+            await getWeather(false, { lat: cardLat, lon: cardLon });
+            pushCityState(cityName, cardLat, cardLon);
         });
     });
 }
 
 // Показваме прогнозата за текущото местоположение на потребителя
 // (чрез Geolocation API) на началната страница.
-async function showLocationFallbackWeather() {
+function showLocationFallbackWeather() {
     const grid = document.getElementById('capitalsWeather');
-    const subtitleEl = document.querySelector('.subtitle');
+    const subtitleEl = document.getElementById('capitalsSubtitle');
+    homeSubtitleMode = 'location';
     if (subtitleEl) {
         subtitleEl.style.display = '';
         subtitleEl.textContent = LANGS[currentLang].subtitle;
     }
     if (!navigator.geolocation) {
-        await showWorldCitiesWeather();
-        return;
+        return showWorldCitiesWeather();
     }
     grid.innerHTML = LANGS[currentLang].loading;
-    navigator.geolocation.getCurrentPosition(async (position) => {
-        try {
-            const lat = position.coords.latitude;
-            const lon = position.coords.longitude;
-            // Локализирано име на града/държавата чрез OpenCage на текущия език
-            const openCageApiKey = 'e6c4ae76e7b84e66a3ebd42e00ed99b5';
-            let cityName = '';
-            let countryName = '';
+    // Връщаме Promise, който се разрешава едва след като geolocation
+    // callback-ът приключи (вкл. евентуалния резервен списък със столици),
+    // за да могат извикващите (напр. смяната на езика) коректно да изчакат
+    // пълното обновяване/превод на съдържанието.
+    return new Promise((resolve) => {
+        navigator.geolocation.getCurrentPosition(async (position) => {
             try {
-                const reverseGeoResp = await fetch(`https://api.opencagedata.com/geocode/v1/json?q=${lat}+${lon}&key=${openCageApiKey}&language=${currentLang}&limit=1`);
-                const reverseGeoData = await reverseGeoResp.json();
-                if (reverseGeoData.results && reverseGeoData.results.length) {
-                    const comp = reverseGeoData.results[0].components;
-                    cityName = comp.city || comp.town || comp.village || comp.municipality
-                        || reverseGeoData.results[0].formatted.split(',')[0];
-                    countryName = comp.country || '';
+                const lat = position.coords.latitude;
+                const lon = position.coords.longitude;
+                // Локализирано име на града/държавата на текущия език (с
+                // Wikidata + резервна транслитерация, ако е нужно).
+                const openCageApiKey = 'e6c4ae76e7b84e66a3ebd42e00ed99b5';
+                let cityName = '';
+                let countryName = '';
+                try {
+                    cityName = await getLocalizedCityName(lat, lon, currentLang);
+                    const reverseGeoResp = await fetch(`https://api.opencagedata.com/geocode/v1/json?q=${lat}+${lon}&key=${openCageApiKey}&language=${currentLang}&limit=1`);
+                    const reverseGeoData = await reverseGeoResp.json();
+                    if (reverseGeoData.results && reverseGeoData.results.length) {
+                        countryName = reverseGeoData.results[0].components.country || '';
+                    }
+                } catch (e) { /* ще покажем само времето, без имена, ако това се провали */ }
+                const meteoResp = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&lang=${currentLang === 'bg' ? 'bg' : currentLang}`);
+                const meteoData = await meteoResp.json();
+                if (!meteoData.current_weather) {
+                    // При проблем с времето за текущото местоположение показваме
+                    // резервния списък с най-големите градове в света, вместо
+                    // съобщение за грешка.
+                    await showWorldCitiesWeather();
+                    resolve();
+                    return;
                 }
-            } catch (e) { /* ще покажем само времето, без имена, ако това се провали */ }
-            const meteoResp = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&lang=${currentLang === 'bg' ? 'bg' : currentLang}`);
-            const meteoData = await meteoResp.json();
-            if (!meteoData.current_weather) {
-                // При проблем с времето за текущото местоположение показваме
-                // резервния списък с най-големите градове в света, вместо
-                // съобщение за грешка.
+                const temp = Math.round(meteoData.current_weather.temperature);
+                const code = meteoData.current_weather.weathercode;
+                const icon = getMeteoIcon(code, meteoData.current_weather.is_day);
+                const windSpeed = meteoData.current_weather.windspeed;
+                const windDir = meteoData.current_weather.winddirection;
+                const windDirText = windDirectionText(windDir);
+                const cityLabel = cityName ? `${cityName}${countryName ? ' (' + countryName + ')' : ''}` : '';
+                grid.innerHTML = `
+                    <div class="capital-card" data-city="${cityName}" data-lat="${lat}" data-lon="${lon}" style="margin:0 auto;">
+                        ${cityLabel ? `<div class="city">${cityLabel}</div>` : ''}
+                        <div class="temp">${icon} ${temp}°C</div>
+                        <div class="desc">${windSpeed} км/ч, ${windDir}° (${windDirText})</div>
+                    </div>`;
+                const card = grid.querySelector('.capital-card');
+                if (card && cityName) {
+                    card.style.cursor = 'pointer';
+                    card.addEventListener('click', async function() {
+                        document.getElementById('cityInput').value = cityName;
+                        showSearch();
+                        await getWeather(false, { lat, lon });
+                        pushCityState(cityName, lat, lon);
+                    });
+                }
+            } catch (e) {
+                // При грешка в извличането на времето за местоположението на
+                // потребителя показваме резервния списък с най-големите градове
+                // в света, вместо съобщение за грешка.
                 await showWorldCitiesWeather();
-                return;
             }
-            const temp = Math.round(meteoData.current_weather.temperature);
-            const code = meteoData.current_weather.weathercode;
-            const icon = getMeteoIcon(code, meteoData.current_weather.is_day);
-            const windSpeed = meteoData.current_weather.windspeed;
-            const windDir = meteoData.current_weather.winddirection;
-            const windDirText = windDirectionText(windDir);
-            const cityLabel = cityName ? `${cityName}${countryName ? ' (' + countryName + ')' : ''}` : '';
-            grid.innerHTML = `
-                <div class="capital-card" data-city="${cityName}" style="margin:0 auto;">
-                    ${cityLabel ? `<div class="city">${cityLabel}</div>` : ''}
-                    <div class="temp">${icon} ${temp}°C</div>
-                    <div class="desc">${windSpeed} км/ч, ${windDir}° (${windDirText})</div>
-                </div>`;
-            const card = grid.querySelector('.capital-card');
-            if (card && cityName) {
-                card.style.cursor = 'pointer';
-                card.addEventListener('click', async function() {
-                    document.getElementById('cityInput').value = cityName;
-                    showSearch();
-                    await getWeather();
-                    pushCityState(cityName);
-                });
-            }
-        } catch (e) {
-            // При грешка в извличането на времето за местоположението на
-            // потребителя показваме резервния списък с най-големите градове
-            // в света, вместо съобщение за грешка.
+            resolve();
+        }, async () => {
+            // Потребителят е отказал достъп до местоположението или има грешка —
+            // показваме прогноза за най-големите градове в света вместо съобщение
+            // за грешка.
             await showWorldCitiesWeather();
-        }
-    }, async () => {
-        // Потребителят е отказал достъп до местоположението или има грешка —
-        // показваме прогноза за най-големите градове в света вместо съобщение
-        // за грешка.
-        await showWorldCitiesWeather();
+            resolve();
+        });
     });
 }
 
@@ -844,6 +905,85 @@ function transliterateCyrillicToLatin(text) {
     return text.split('').map(ch => (ch in CYRILLIC_TO_LATIN ? CYRILLIC_TO_LATIN[ch] : ch)).join('');
 }
 
+// Резервна (приблизителна) транслитерация латиница -> кирилица, използвана
+// само когато нито обратното геокодиране, нито Wikidata могат да върнат
+// истинско българско име на града (напр. по-малко познати градове без
+// българска статия в Уикипедия). Не е перфектна фонетично, но е много
+// по-добра от показване на чисто латинско име при избран български език.
+const LATIN_TO_CYRILLIC_MULTI = [
+    [/sht/gi, 'щ'], [/ch/gi, 'ч'], [/sh/gi, 'ш'], [/zh/gi, 'ж'],
+    [/ya/gi, 'я'], [/yu/gi, 'ю'], [/ts/gi, 'ц'], [/th/gi, 'т']
+];
+const LATIN_TO_CYRILLIC_SINGLE = {
+    'a':'а','b':'б','v':'в','g':'г','d':'д','e':'е','z':'з','i':'и','y':'й',
+    'k':'к','l':'л','m':'м','n':'н','o':'о','p':'п','r':'р','s':'с','t':'т',
+    'u':'у','f':'ф','h':'х','c':'к','j':'дж','w':'в','x':'кс','q':'к'
+};
+function transliterateLatinToCyrillic(text) {
+    if (!text) return text;
+    let result = text;
+    LATIN_TO_CYRILLIC_MULTI.forEach(([re, repl]) => { result = result.replace(re, repl); });
+    result = result.split('').map(ch => {
+        const lower = ch.toLowerCase();
+        if (lower in LATIN_TO_CYRILLIC_SINGLE) {
+            const mapped = LATIN_TO_CYRILLIC_SINGLE[lower];
+            return ch === lower ? mapped : mapped.charAt(0).toUpperCase() + mapped.slice(1);
+        }
+        return ch;
+    }).join('');
+    return result;
+}
+
+// Връща локализирано име на град по координати и целеви език, като пробва
+// (по ред на надеждност): 1) Wikidata sitelinks (точното заглавие на
+// статията в Уикипедия на съответния език), 2) компонентите от обратното
+// геокодиране на OpenCage на същия език, 3) транслитерация като последен
+// резервен вариант, ако полученото име все още е на различна писменост.
+async function getLocalizedCityName(lat, lon, lang) {
+    const openCageApiKey = 'e6c4ae76e7b84e66a3ebd42e00ed99b5';
+    let name = '';
+    let wikidataId = null;
+    try {
+        const reverseGeoResp = await fetch(`https://api.opencagedata.com/geocode/v1/json?q=${lat}+${lon}&key=${openCageApiKey}&language=${lang}&limit=1`);
+        const reverseGeoData = await reverseGeoResp.json();
+        if (reverseGeoData.results && reverseGeoData.results.length) {
+            const comp = reverseGeoData.results[0].components;
+            name = comp.city || comp.town || comp.village || comp.municipality
+                || reverseGeoData.results[0].formatted.split(',')[0];
+            wikidataId = reverseGeoData.results[0].annotations && reverseGeoData.results[0].annotations.wikidata;
+        }
+    } catch (e) { /* ще разчитаме на резервните методи по-долу */ }
+    // Опитваме Wikidata sitelinks за по-точно локализирано заглавие
+    // (напр. "London" -> "Лондон" на български), ако имаме Wikidata ID.
+    if (wikidataId) {
+        try {
+            const wdResp = await fetch(`https://www.wikidata.org/wiki/Special:EntityData/${wikidataId}.json`);
+            if (wdResp.ok) {
+                const wdData = await wdResp.json();
+                const entity = wdData.entities && wdData.entities[wikidataId];
+                const siteKey = `${lang}wiki`;
+                const sitelinkTitle = entity && entity.sitelinks && entity.sitelinks[siteKey] && entity.sitelinks[siteKey].title;
+                if (sitelinkTitle) {
+                    name = sitelinkTitle;
+                }
+            }
+        } catch (e) { /* ще разчитаме на името от обратното геокодиране */ }
+    }
+    // Ако търсим българско име, но полученото все още е изцяло на
+    // латиница (нито геокодирането, нито Wikidata имат превод), го
+    // транслитерираме като последен резервен вариант.
+    if (name && lang === 'bg' && !/[А-Яа-я]/.test(name) && /[A-Za-z]/.test(name)) {
+        name = transliterateLatinToCyrillic(name);
+    }
+    // Ако сме на не-български език, но името все пак е на кирилица
+    // (напр. API-то няма превод за този град), транслитерираме го към
+    // латиница по същата логика като преди.
+    if (name && lang !== 'bg' && /[А-Яа-я]/.test(name)) {
+        name = transliterateCyrillicToLatin(name);
+    }
+    return name;
+}
+
 function getRecentCities() {
     try {
         const raw = localStorage.getItem(RECENT_CITIES_KEY);
@@ -856,12 +996,15 @@ function getRecentCities() {
 function addRecentCity(lat, lon, country) {
     if (typeof lat !== 'number' || typeof lon !== 'number') return;
     let list = getRecentCities();
-    // Разграничаваме градовете по координати (закръглени), а не по име,
-    // защото името се превежда динамично според избрания език и не бива
-    // да служи за идентификатор на записа.
-    const roundedLat = Math.round(lat * 1000) / 1000;
-    const roundedLon = Math.round(lon * 1000) / 1000;
-    list = list.filter(c => Math.round(c.lat * 1000) / 1000 !== roundedLat || Math.round(c.lon * 1000) / 1000 !== roundedLon);
+    // Разграничаваме градовете по ТОЧНИТЕ координати на избрания град (вече
+    // подавани явно при клик върху карта или търсене), а не по име, защото
+    // името се превежда динамично според избрания език и не бива да служи
+    // за идентификатор на записа. Закръгляме леко (до 4 знака, ~11м), само
+    // за да изгладим пренебрежимите разлики с плаваща запетая, без да
+    // сливаме различни близки градове.
+    const roundedLat = Math.round(lat * 10000) / 10000;
+    const roundedLon = Math.round(lon * 10000) / 10000;
+    list = list.filter(c => Math.round(c.lat * 10000) / 10000 !== roundedLat || Math.round(c.lon * 10000) / 10000 !== roundedLon);
     list.unshift({ lat, lon, country: country || '' });
     list = list.slice(0, RECENT_CITIES_MAX);
     try {
@@ -885,25 +1028,13 @@ async function showRecentCitiesWeather() {
     grid.innerHTML = LANGS[currentLang].loading;
     async function fetchOne(c, attempt) {
         try {
-            // Локализирано име на града според текущия език (чрез обратно
-            // геокодиране), за да се превежда при смяна на езика.
+            // Локализирано име на града според текущия език (чрез Wikidata +
+            // обратно геокодиране, с резервна транслитерация), за да се
+            // превежда коректно при смяна на езика (вкл. на кирилица).
             let localizedName = '';
             try {
-                const openCageApiKey = 'e6c4ae76e7b84e66a3ebd42e00ed99b5';
-                const reverseGeoResp = await fetch(`https://api.opencagedata.com/geocode/v1/json?q=${c.lat}+${c.lon}&key=${openCageApiKey}&language=${currentLang}&limit=1`);
-                const reverseGeoData = await reverseGeoResp.json();
-                if (reverseGeoData.results && reverseGeoData.results.length) {
-                    const comp = reverseGeoData.results[0].components;
-                    localizedName = comp.city || comp.town || comp.village || comp.municipality
-                        || reverseGeoData.results[0].formatted.split(',')[0];
-                }
+                localizedName = await getLocalizedCityName(c.lat, c.lon, currentLang);
             } catch (e) { /* ако геокодирането се провали, ще покажем без име */ }
-            // Ако сме на не-български език, но наименованието все пак е на
-            // кирилица (напр. API-то не разполага с превод за този град),
-            // транслитерираме го буква по буква към латиница.
-            if (localizedName && currentLang !== 'bg' && /[А-Яа-я]/.test(localizedName)) {
-                localizedName = transliterateCyrillicToLatin(localizedName);
-            }
             const meteoResp = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${c.lat}&longitude=${c.lon}&current_weather=true&lang=${currentLang === 'bg' ? 'bg' : currentLang}`);
             if (!meteoResp.ok) throw new Error('bad response');
             const meteoData = await meteoResp.json();
@@ -936,10 +1067,12 @@ async function showRecentCitiesWeather() {
         card.style.cursor = 'pointer';
         card.addEventListener('click', async function() {
             const cityName = card.getAttribute('data-city');
+            const cardLat = parseFloat(card.getAttribute('data-lat'));
+            const cardLon = parseFloat(card.getAttribute('data-lon'));
             document.getElementById('cityInput').value = cityName;
             showSearch();
-            await getWeather();
-            pushCityState(cityName);
+            await getWeather(false, { lat: cardLat, lon: cardLon });
+            pushCityState(cityName, cardLat, cardLon);
         });
     });
 }
@@ -1102,34 +1235,38 @@ async function showRadar(lat, lon) {
 function pushHomeState() {
     history.pushState({ view: 'home' }, '', '#home');
 }
-function pushCityState(cityName) {
-    history.pushState({ view: 'city', city: cityName }, '', `#city/${encodeURIComponent(cityName)}`);
+function pushCityState(cityName, lat, lon) {
+    const hasCoords = typeof lat === 'number' && typeof lon === 'number';
+    history.pushState({ view: 'city', city: cityName, lat, lon }, '', `#city/${encodeURIComponent(cityName)}`);
 }
-function pushCityViewState(cityName, viewName) {
-    history.pushState({ view: viewName, city: cityName }, '', `#city/${encodeURIComponent(cityName)}/${viewName}`);
+function pushCityViewState(cityName, viewName, lat, lon) {
+    history.pushState({ view: viewName, city: cityName, lat, lon }, '', `#city/${encodeURIComponent(cityName)}/${viewName}`);
 }
 function replaceHomeState() {
     history.replaceState({ view: 'home' }, '', '#home');
 }
-function replaceCityState(cityName) {
-    history.replaceState({ view: 'city', city: cityName }, '', `#city/${encodeURIComponent(cityName)}`);
+function replaceCityState(cityName, lat, lon) {
+    history.replaceState({ view: 'city', city: cityName, lat, lon }, '', `#city/${encodeURIComponent(cityName)}`);
 }
 
 // Обработва навигацията чрез бутоните "Назад"/"Напред" на браузъра.
 window.addEventListener('popstate', async (e) => {
     const state = e.state;
+    const stateCoords = (state && typeof state.lat === 'number' && typeof state.lon === 'number')
+        ? { lat: state.lat, lon: state.lon }
+        : null;
     if (!state || state.view === 'home') {
         showHome();
     } else if (state.view === 'city') {
         document.getElementById('cityInput').value = state.city;
         lastSearchedCity = state.city;
         showSearch();
-        await getWeather(true);
+        await getWeather(true, stateCoords);
     } else if (state.view === 'daily' || state.view === 'hourly') {
         document.getElementById('cityInput').value = state.city;
         lastSearchedCity = state.city;
         showSearch();
-        await getWeather(true);
+        await getWeather(true, stateCoords);
         if (state.view === 'daily' && typeof window.__renderDailyForecast === 'function') {
             window.__renderDailyForecast();
         } else if (state.view === 'hourly' && typeof window.__renderHourlyForecast === 'function') {
