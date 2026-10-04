@@ -26,6 +26,7 @@ const LANGS = {
         rateLimitMsg: 'Тъй като в момента не можем да ви дадем информация за най-големите градове в Европа, вижте прогнозата в града, в който сте:',
         locationDenied: 'Не успяхме да определим местоположението ви. Моля, потърсете град ръчно.',
         worldCitiesSubtitle: 'Времето в някои от големите столици',
+        recentCitiesTitle: 'Последно разглеждани',
         windDirs: ['С', 'ССИ', 'СИ', 'ИСИ', 'И', 'ИЮИ', 'ЮИ', 'ЮЮИ', 'Ю', 'ЮЮЗ', 'ЮЗ', 'ЗЮЗ', 'З', 'ЗСЗ', 'СЗ', 'ССЗ', 'С']
     },
     en: {
@@ -54,6 +55,7 @@ const LANGS = {
         rateLimitMsg: 'Since we currently cannot show you the weather for the largest European capitals, here is the forecast for your location:',
         locationDenied: 'We could not determine your location. Please search for a city manually.',
         worldCitiesSubtitle: 'Weather in some of the largest capitals',
+        recentCitiesTitle: 'Recently viewed',
         windDirs: ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW', 'N']
     },
     es: {
@@ -82,6 +84,7 @@ const LANGS = {
         rateLimitMsg: 'Como en este momento no podemos mostrarte el tiempo de las mayores capitales europeas, aquí tienes el pronóstico de tu ubicación:',
         locationDenied: 'No pudimos determinar tu ubicación. Por favor, busca una ciudad manualmente.',
         worldCitiesSubtitle: 'El tiempo en algunas de las grandes capitales',
+        recentCitiesTitle: 'Vistos recientemente',
         windDirs: ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSO', 'SO', 'OSO', 'O', 'ONO', 'NO', 'NNO', 'N']
     }
 };
@@ -182,6 +185,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     // се преведат надписите на столиците/съобщението за
                     // резервния режим по местоположение.
                     await showCapitalsWeather();
+                    await showRecentCitiesWeather();
                 }
             };
         }
@@ -359,6 +363,7 @@ async function getWeather(isRelang) {
         </div>`;
         cityInfoHtml += `<div id="forecastContainer"></div>`;
         resultDiv.innerHTML = cityInfoHtml;
+        addRecentCity(lat, lon, country);
 
         // --- Нови функции за показване на режими ---
         function showCityMain() {
@@ -791,10 +796,132 @@ async function showLocationFallbackWeather() {
     });
 }
 
+// --- "Последно разглеждани" градове (съхранени в localStorage) ---
+const RECENT_CITIES_KEY = 'recentCities';
+const RECENT_CITIES_MAX = 5;
+
+// Съответствия кирилица -> латиница, използвани като резервен вариант,
+// когато обратното геокодиране не успее да върне име на града на
+// избрания (нe-български) език и то си остане на кирилица.
+const CYRILLIC_TO_LATIN = {
+    'А':'A','Б':'B','В':'V','Г':'G','Д':'D','Е':'E','Ж':'Zh','З':'Z','И':'I','Й':'Y',
+    'К':'K','Л':'L','М':'M','Н':'N','О':'O','П':'P','Р':'R','С':'S','Т':'T','У':'U',
+    'Ф':'F','Х':'H','Ц':'Ts','Ч':'Ch','Ш':'Sh','Щ':'Sht','Ъ':'A','Ь':'','Ю':'Yu','Я':'Ya',
+    'а':'a','б':'b','в':'v','г':'g','д':'d','е':'e','ж':'zh','з':'z','и':'i','й':'y',
+    'к':'k','л':'l','м':'m','н':'n','о':'o','п':'p','р':'r','с':'s','т':'t','у':'u',
+    'ф':'f','х':'h','ц':'ts','ч':'ch','ш':'sh','щ':'sht','ъ':'a','ь':'','ю':'yu','я':'ya'
+};
+
+function transliterateCyrillicToLatin(text) {
+    if (!text) return text;
+    return text.split('').map(ch => (ch in CYRILLIC_TO_LATIN ? CYRILLIC_TO_LATIN[ch] : ch)).join('');
+}
+
+function getRecentCities() {
+    try {
+        const raw = localStorage.getItem(RECENT_CITIES_KEY);
+        return raw ? JSON.parse(raw) : [];
+    } catch (e) {
+        return [];
+    }
+}
+
+function addRecentCity(lat, lon, country) {
+    if (typeof lat !== 'number' || typeof lon !== 'number') return;
+    let list = getRecentCities();
+    // Разграничаваме градовете по координати (закръглени), а не по име,
+    // защото името се превежда динамично според избрания език и не бива
+    // да служи за идентификатор на записа.
+    const roundedLat = Math.round(lat * 1000) / 1000;
+    const roundedLon = Math.round(lon * 1000) / 1000;
+    list = list.filter(c => Math.round(c.lat * 1000) / 1000 !== roundedLat || Math.round(c.lon * 1000) / 1000 !== roundedLon);
+    list.unshift({ lat, lon, country: country || '' });
+    list = list.slice(0, RECENT_CITIES_MAX);
+    try {
+        localStorage.setItem(RECENT_CITIES_KEY, JSON.stringify(list));
+    } catch (e) { /* игнорирай грешки при запис */ }
+}
+
+// Показва прогноза за последно разглежданите градове на началната страница.
+async function showRecentCitiesWeather() {
+    const section = document.getElementById('recentCitiesSection');
+    const grid = document.getElementById('recentCitiesWeather');
+    const titleEl = document.getElementById('recentCitiesTitle');
+    if (!section || !grid) return;
+    const list = getRecentCities();
+    if (!list.length) {
+        section.style.display = 'none';
+        return;
+    }
+    if (titleEl) titleEl.textContent = LANGS[currentLang].recentCitiesTitle;
+    section.style.display = '';
+    grid.innerHTML = LANGS[currentLang].loading;
+    async function fetchOne(c, attempt) {
+        try {
+            // Локализирано име на града според текущия език (чрез обратно
+            // геокодиране), за да се превежда при смяна на езика.
+            let localizedName = '';
+            try {
+                const openCageApiKey = 'e6c4ae76e7b84e66a3ebd42e00ed99b5';
+                const reverseGeoResp = await fetch(`https://api.opencagedata.com/geocode/v1/json?q=${c.lat}+${c.lon}&key=${openCageApiKey}&language=${currentLang}&limit=1`);
+                const reverseGeoData = await reverseGeoResp.json();
+                if (reverseGeoData.results && reverseGeoData.results.length) {
+                    const comp = reverseGeoData.results[0].components;
+                    localizedName = comp.city || comp.town || comp.village || comp.municipality
+                        || reverseGeoData.results[0].formatted.split(',')[0];
+                }
+            } catch (e) { /* ако геокодирането се провали, ще покажем без име */ }
+            // Ако сме на не-български език, но наименованието все пак е на
+            // кирилица (напр. API-то не разполага с превод за този град),
+            // транслитерираме го буква по буква към латиница.
+            if (localizedName && currentLang !== 'bg' && /[А-Яа-я]/.test(localizedName)) {
+                localizedName = transliterateCyrillicToLatin(localizedName);
+            }
+            const meteoResp = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${c.lat}&longitude=${c.lon}&current_weather=true&lang=${currentLang === 'bg' ? 'bg' : currentLang}`);
+            if (!meteoResp.ok) throw new Error('bad response');
+            const meteoData = await meteoResp.json();
+            if (!meteoData.current_weather) throw new Error('no current_weather');
+            const temp = Math.round(meteoData.current_weather.temperature);
+            const code = meteoData.current_weather.weathercode;
+            const icon = getMeteoIcon(code, meteoData.current_weather.is_day);
+            const windSpeed = meteoData.current_weather.windspeed;
+            const windDir = meteoData.current_weather.winddirection;
+            const windDirText = windDirectionText(windDir);
+            const cityLabel = localizedName || c.country || '';
+            return `<div class="capital-card" data-city="${cityLabel}" data-lat="${c.lat}" data-lon="${c.lon}">
+                <div class="city">${cityLabel}</div>
+                <div class="temp">${icon} ${temp}°C</div>
+                <div class="desc">${windSpeed} км/ч, ${windDir}° (${windDirText})</div>
+            </div>`;
+        } catch (e) {
+            if (!attempt) return fetchOne(c, 1);
+            return '';
+        }
+    }
+    const results = await Promise.all(list.map(c => fetchOne(c, 0)));
+    const successful = results.filter(r => r);
+    if (!successful.length) {
+        section.style.display = 'none';
+        return;
+    }
+    grid.innerHTML = successful.join('');
+    Array.from(grid.querySelectorAll('.capital-card')).forEach(card => {
+        card.style.cursor = 'pointer';
+        card.addEventListener('click', async function() {
+            const cityName = card.getAttribute('data-city');
+            document.getElementById('cityInput').value = cityName;
+            showSearch();
+            await getWeather();
+            pushCityState(cityName);
+        });
+    });
+}
+
 // Показване на начална страница и секция за търсене
 function showHome() {
     document.getElementById('homeSection').style.display = '';
     document.getElementById('searchSection').style.display = 'none';
+    showRecentCitiesWeather();
 }
 function showSearch() {
     document.getElementById('homeSection').style.display = 'none';
