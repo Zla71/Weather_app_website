@@ -25,7 +25,7 @@ describe('City search flow', () => {
     cy.get('#forecastContainer .forecast-day').should('have.length', 7);
     cy.get('.city-info-panel').should('not.be.visible');
 
-    cy.get('#forecastContainer button').contains('Назад').click();
+    cy.get('#forecastContainer button').contains('Back').click();
     cy.get('.city-info-panel').should('be.visible');
     cy.get('#forecastContainer').should('be.empty');
   });
@@ -36,7 +36,7 @@ describe('City search flow', () => {
     cy.get('#forecastContainer .forecast-hour').should('have.length.greaterThan', 0);
     cy.get('.city-info-panel').should('not.be.visible');
 
-    cy.get('#forecastContainer button').contains('Назад').click();
+    cy.get('#forecastContainer button').contains('Back').click();
     cy.get('.city-info-panel').should('be.visible');
   });
 
@@ -55,6 +55,6 @@ describe('City search flow', () => {
     cy.get('#cityInput').clear().type('Nonexistentcityxyz');
     cy.get('#searchBtn').click();
     cy.wait('@openCageEmpty');
-    cy.get('#weatherResult').should('contain.text', 'Градът не е намерен.');
+    cy.get('#weatherResult').should('contain.text', 'City not found.');
   });
 });
