@@ -15,19 +15,13 @@ describe('City search flow', () => {
     cy.get('#searchSection').should('be.visible');
     cy.get('#weatherResult .city-info-panel').should('contain.text', 'Paris');
     cy.get('#weatherResult .current-weather').should('contain.text', '°C');
-    cy.get('#btnDaily').should('be.visible');
     cy.get('#btnHourly').should('be.visible');
   });
 
-  it('shows a 7-day forecast and can navigate back', () => {
+  it('shows the 7-day forecast inline in the sidebar', () => {
     searchFor('Paris');
-    cy.get('#btnDaily').click();
-    cy.get('#forecastContainer .forecast-day').should('have.length', 7);
-    cy.get('.city-info-panel').should('not.be.visible');
-
-    cy.get('#forecastContainer button').contains('Back').click();
+    cy.get('.daily-sidebar .daily-sidebar-row').should('have.length', 7);
     cy.get('.city-info-panel').should('be.visible');
-    cy.get('#forecastContainer').should('be.empty');
   });
 
   it('shows an hourly forecast and can navigate back', () => {

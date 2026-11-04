@@ -11,7 +11,7 @@ const TEXT = {
     humidity: 'Humidity',
     back: 'Back',
     daily: '7-day forecast',
-    hourly: 'Hourly forecast',
+    hourly: '48 Hours Forecast',
     hours48: '48h',
     loading: 'Loading...',
     notFound: 'City not found.',
@@ -23,7 +23,7 @@ const TEXT = {
     precip: 'Precip.',
     sunrise: 'Sunrise',
     sunset: 'Sunset',
-    windDirs: ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW', 'N']
+    windDirs: ['North', 'North/North East', 'North East', 'East/North East', 'East', 'East/South East', 'South East', 'South/South East', 'South', 'South/South West', 'South West', 'West/South West', 'West', 'West/North West', 'North West', 'North/North West', 'North']
 };
 
 let lastSearchedCity = '';
@@ -136,21 +136,82 @@ async function getWeather(isRelang, explicitCoords) {
         }
 
         let cityInfoHtml = `<div class="city-info-panel" style="margin-bottom:18px;">
-            <strong style="font-size:1.5em;">${displayName.split(',')[0]}</strong> <span style="color:#2471a3;font-size:1em;">(${country})</span><br>`;
-        if (cityImageUrl) {
-            cityInfoHtml += `<div style="margin:10px 0;"><img src="${cityImageUrl}" alt="${cityNameForWiki}" style="max-width:100%;height:auto;border-radius:12px;box-shadow:0 2px 8px #b3d8f733;max-height:260px;object-fit:cover;"></div>`;
+            <div class="city-header">
+                <strong class="city-header-name">${displayName.split(',')[0]}</strong>
+                <span class="city-header-country">${country}</span>
+            </div>`;
+
+        let dailyForecastHtml = '<div class="daily-sidebar-title">7-DAY FORECAST</div><div class="daily-sidebar-list">';
+        for (let i = 0; i < meteoData.daily.time.length; i++) {
+            const date = new Date(meteoData.daily.time[i]);
+            const code = meteoData.daily.weathercode[i];
+            const icon = getMeteoIcon(code);
+            const condition = getMeteoCondition(code);
+            const weekdayLabel = i === 0 ? 'Today' : date.toLocaleDateString('en-GB', { weekday: 'short' });
+            const dateLabel = date.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
+            const dayLabel = `${weekdayLabel}, ${dateLabel}`;
+            dailyForecastHtml += `<div class="daily-sidebar-row">
+                <span class="daily-sidebar-day">${dayLabel}</span>
+                <span class="daily-sidebar-icon">${icon}</span>
+                <span class="daily-sidebar-condition">${condition}</span>
+                <span class="daily-sidebar-temps"><b>${Math.round(meteoData.daily.temperature_2m_max[i])}</b>/${Math.round(meteoData.daily.temperature_2m_min[i])}</span>
+            </div>`;
         }
-        if (cityDescription) {
-            cityInfoHtml += `<div style="font-size:0.98em;color:#fff;margin-bottom:8px;">${cityDescription}</div>`;
-        }
+        dailyForecastHtml += '</div>';
 
         let currentWeatherHtml = '';
+        let airConditionsHtml = '';
+        let hourlyStripHtml = '';
         try {
-            const currentData = await cachedFetchJson(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&hourly=relative_humidity_2m&timezone=auto&lang=en`);
+            const currentData = await cachedFetchJson(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&hourly=relative_humidity_2m,apparent_temperature,precipitation_probability,uv_index,temperature_2m,weathercode,is_day&forecast_days=2&timezone=auto&lang=en`);
             let humidity = '-';
-            if (currentData.hourly && currentData.hourly.relative_humidity_2m && currentData.current_weather) {
-                const idx = currentData.hourly.time.findIndex(t => t === currentData.current_weather.time);
-                if (idx !== -1) humidity = currentData.hourly.relative_humidity_2m[idx];
+            let realFeel = '-';
+            let rainChance = '-';
+            let uvIndex = '-';
+            let currentIdx = -1;
+            if (currentData.hourly && currentData.current_weather) {
+                currentIdx = currentData.hourly.time.findIndex(t => t === currentData.current_weather.time);
+                if (currentIdx === -1) {
+                    // Fall back to matching by parsed Date value, in case the
+                    // current_weather and hourly timestamps are formatted
+                    // slightly differently (e.g. missing/extra seconds).
+                    const currentTimeMs = new Date(currentData.current_weather.time).getTime();
+                    currentIdx = currentData.hourly.time.findIndex(t => new Date(t).getTime() === currentTimeMs);
+                }
+                if (currentIdx === -1) {
+                    // Last resort: pick the closest hourly entry to "now" in
+                    // the city's own local time. The hourly "time" strings
+                    // (with timezone=auto) have no timezone/"Z" suffix, so
+                    // `new Date(t)` parses them using the *browser's* local
+                    // timezone instead of the city's. To compare correctly,
+                    // we build a Date from the city's local wall-clock parts
+                    // (derived via utc_offset_seconds) the same way the
+                    // browser would parse a timezone-less string, so both
+                    // sides of the comparison line up.
+                    const offsetSec = typeof currentData.utc_offset_seconds === 'number' ? currentData.utc_offset_seconds : 0;
+                    const cityNowUtcBased = new Date(Date.now() + offsetSec * 1000);
+                    const cityNowAsLocal = new Date(
+                        cityNowUtcBased.getUTCFullYear(), cityNowUtcBased.getUTCMonth(), cityNowUtcBased.getUTCDate(),
+                        cityNowUtcBased.getUTCHours(), cityNowUtcBased.getUTCMinutes(), cityNowUtcBased.getUTCSeconds()
+                    );
+                    const cityNowMs = cityNowAsLocal.getTime();
+                    let closestIdx = -1;
+                    let closestDiff = Infinity;
+                    currentData.hourly.time.forEach((t, idx) => {
+                        const diff = Math.abs(new Date(t).getTime() - cityNowMs);
+                        if (diff < closestDiff) {
+                            closestDiff = diff;
+                            closestIdx = idx;
+                        }
+                    });
+                    currentIdx = closestIdx;
+                }
+                if (currentIdx !== -1) {
+                    if (currentData.hourly.relative_humidity_2m) humidity = currentData.hourly.relative_humidity_2m[currentIdx];
+                    if (currentData.hourly.apparent_temperature) realFeel = Math.round(currentData.hourly.apparent_temperature[currentIdx]);
+                    if (currentData.hourly.precipitation_probability) rainChance = currentData.hourly.precipitation_probability[currentIdx];
+                    if (currentData.hourly.uv_index) uvIndex = Math.round(currentData.hourly.uv_index[currentIdx] * 10) / 10;
+                }
             }
             if (currentData.current_weather) {
                 const c = currentData.current_weather;
@@ -167,23 +228,76 @@ async function getWeather(isRelang, explicitCoords) {
                     localTimeStr = c.time.split('T')[1].slice(0, 5);
                 }
                 const localTimeHtml = localTimeStr
-                    ? `<div style="font-size:0.95em;color:#9fb0c3;margin-bottom:4px;">🕒 ${localTimeStr}</div>`
+                    ? `<div class="hero-time">🕒 ${localTimeStr}</div>`
                     : '';
-                currentWeatherHtml = `${localTimeHtml}<div class="current-weather" style="margin:12px 0 8px 0;font-size:1.2em;"><b>${TEXT.now}:</b> <span style="font-size:1.5em;">${icon} ${Math.round(c.temperature)}°C</span>, ${TEXT.wind}: ${c.windspeed} ${TEXT.windUnit} ${windDirectionText(windDir)}, ${TEXT.humidity}: ${humidity}%</div>`;
+                currentWeatherHtml = `<div class="current-weather weather-hero">
+                    ${localTimeHtml}
+                    <div class="hero-icon">${icon}</div>
+                    <div class="hero-temp">${Math.round(c.temperature)}°C</div>
+                </div>`;
+
+                airConditionsHtml = `<div class="air-conditions-grid">
+                    <div class="air-item"><span class="air-label">Real Feel</span><span class="air-value">${realFeel !== '-' ? realFeel + '°C' : '-'}</span></div>
+                    <div class="air-item air-item-wind"><span class="air-label">Wind</span><span class="air-value">${c.windspeed} ${TEXT.windUnit}</span><span class="air-subvalue">${windDirectionText(windDir)}</span></div>
+                    <div class="air-item"><span class="air-label">Chance of rain</span><span class="air-value">${rainChance !== '-' ? rainChance + '%' : '-'}</span></div>
+                </div>`;
+
+                if (currentData.hourly && currentIdx !== -1) {
+                    const h = currentData.hourly;
+                    let stripItems = '';
+                    const count = Math.min(8, h.time.length - currentIdx);
+                    for (let i = currentIdx; i < currentIdx + count; i++) {
+                        const hIcon = getMeteoIcon(h.weathercode[i], h.is_day ? h.is_day[i] : 1);
+                        const hTemp = Math.round(h.temperature_2m[i]);
+                        // Open-Meteo's "time" strings (with timezone=auto) are
+                        // already expressed in the city's local time, without
+                        // a timezone offset. Parsing them with `new Date(...)`
+                        // and calling `.getHours()` would instead interpret
+                        // them as the browser's local time, producing the
+                        // wrong hour label (e.g. showing "01:00" after "Now"
+                        // even if it's already past 1am in the city but not
+                        // in the browser's timezone). Extract the hour
+                        // directly from the string to keep it city-relative.
+                        const hourOfDay = h.time[i].slice(11, 13);
+                        const label = i === currentIdx ? TEXT.now : `${hourOfDay}:00`;
+                        stripItems += `<div class="hourly-strip-item">
+                            <div class="hourly-strip-label">${label}</div>
+                            <div class="hourly-strip-icon">${hIcon}</div>
+                            <div class="hourly-strip-temp">${hTemp}°</div>
+                        </div>`;
+                    }
+                    hourlyStripHtml = `<div class="hourly-strip">${stripItems}</div>`;
+                }
             }
         } catch (e) { /* ignore */ }
         cityInfoHtml += currentWeatherHtml;
+        cityInfoHtml += airConditionsHtml;
+        cityInfoHtml += hourlyStripHtml;
         cityInfoHtml += `<div class="forecast-mode-buttons">
-            <button id="btnDaily">${TEXT.daily}</button>
-            <button id="btnHourly">${TEXT.hourly}</button>
+            <button id="btnHourly" class="hours48-btn">${TEXT.hourly}</button>
         </div>`;
+        if (cityImageUrl) {
+            cityInfoHtml += `<div class="city-image-wrap"><img src="${cityImageUrl}" alt="${cityNameForWiki}" class="city-image"></div>`;
+        }
+        if (cityDescription) {
+            cityInfoHtml += `<div class="city-description">${cityDescription}</div>`;
+        }
         cityInfoHtml += '</div>';
-        cityInfoHtml += `<div class="city-map-wrap" id="cityMapWrap">
+        cityInfoHtml += `<div id="forecastContainer"></div>`;
+
+        const mapHtml = `<div class="city-map-wrap" id="cityMapWrap">
             <iframe class="city-map" loading="lazy" title="${displayName.split(',')[0]}"
                 src="https://www.openstreetmap.org/export/embed.html?layer=mapnik&marker=${lat}%2C${lon}&zoom=12&mlat=${lat}&mlon=${lon}"></iframe>
         </div>`;
-        cityInfoHtml += `<div id="forecastContainer"></div>`;
-        resultDiv.innerHTML = cityInfoHtml;
+
+        const fullLayoutHtml = `<div class="city-detail-layout">
+            <div class="city-detail-main">${cityInfoHtml}</div>
+            <div class="city-detail-sidebar">
+                <div class="daily-sidebar">${dailyForecastHtml}</div>
+                ${mapHtml}
+            </div>
+        </div>`;
+        resultDiv.innerHTML = fullLayoutHtml;
 
         function showCityMain() {
             currentView = 'main';
@@ -191,10 +305,14 @@ async function getWeather(isRelang, explicitCoords) {
             document.getElementById('forecastContainer').innerHTML = '';
             const mapWrap = document.getElementById('cityMapWrap');
             if (mapWrap) mapWrap.style.display = '';
+            const sidebar = document.querySelector('.daily-sidebar');
+            if (sidebar) sidebar.style.display = '';
         }
         function showBackButton(onClick) {
             const mapWrap = document.getElementById('cityMapWrap');
             if (mapWrap) mapWrap.style.display = 'none';
+            const sidebar = document.querySelector('.daily-sidebar');
+            if (sidebar) sidebar.style.display = 'none';
             let fc = document.getElementById('forecastContainer');
             let headerBar = document.createElement('div');
             headerBar.style = 'display:flex;align-items:center;position:relative;margin-bottom:14px;min-height:40px;';
@@ -208,27 +326,6 @@ async function getWeather(isRelang, explicitCoords) {
             headerBar.appendChild(backBtn);
             headerBar.appendChild(cityTitle);
             fc.insertBefore(headerBar, fc.firstChild);
-        }
-        function renderDailyForecast() {
-            currentView = 'daily';
-            document.querySelector('.city-info-panel').style.display = 'none';
-            let dailyHtml = `<b>${TEXT.daily}:</b><br>`;
-            dailyHtml += '<div class="daily-grid">';
-            for (let i = 0; i < meteoData.daily.time.length; i++) {
-                const date = new Date(meteoData.daily.time[i]);
-                const code = meteoData.daily.weathercode[i];
-                const iconUrl = getMeteoIcon(code);
-                dailyHtml += `<div class="forecast-day animate-fade-in">
-                    <b>${date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</b><br>
-                    <span style="font-size: 2em;">${iconUrl}</span>
-                    <br>${TEXT.max}: <b>${Math.round(meteoData.daily.temperature_2m_max[i])}°C</b><br>
-                    ${TEXT.min}: ${Math.round(meteoData.daily.temperature_2m_min[i])}°C<br>
-                    ${TEXT.precip}: ${Math.round(meteoData.daily.precipitation_sum[i])} mm<br>
-                </div>`;
-            }
-            dailyHtml += '</div>';
-            document.getElementById('forecastContainer').innerHTML = dailyHtml;
-            showBackButton(() => { history.back(); });
         }
         async function renderHourlyForecast() {
             currentView = 'hourly';
@@ -279,14 +376,14 @@ async function getWeather(isRelang, explicitCoords) {
                         const hour = item.time;
                         const dateStr = hour.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
                         if (dateStr !== lastDate) {
-                            hourlyHtml += `<div style="grid-column: 1 / -1; flex-basis:100%;font-weight:bold;font-size:1.1em;margin:10px 0 0 0;">${dateStr}</div>`;
+                            hourlyHtml += `<div style="flex-basis:100%;text-align:center;font-weight:bold;font-size:1.1em;margin:10px 0 0 0;">${dateStr}</div>`;
                             lastDate = dateStr;
                         }
                         if (item.type === 'sunrise' || item.type === 'sunset') {
                             const label = item.type === 'sunrise' ? TEXT.sunrise : TEXT.sunset;
                             const emoji = item.type === 'sunrise' ? '🌅' : '🌇';
                             const timeStr = hour.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-                            hourlyHtml += `<div class="sun-event animate-fade-in" style="grid-column: 1 / -1; flex-basis:100%;text-align:center;font-size:1em;margin:6px 0;color:#ff8a00;">${emoji} ${label} ${timeStr}</div>`;
+                            hourlyHtml += `<div class="sun-event animate-fade-in" style="flex-basis:100%;text-align:center;font-size:1em;margin:6px 0;color:#ff8a00;">${emoji} ${label} ${timeStr}</div>`;
                             continue;
                         }
                         const i = item.index;
@@ -304,12 +401,12 @@ async function getWeather(isRelang, explicitCoords) {
                         const humidity = hourlyData.hourly.relative_humidity_2m ? hourlyData.hourly.relative_humidity_2m[i] : '-';
                         const precipitation = hourlyData.hourly.precipitation ? hourlyData.hourly.precipitation[i] : '-';
                         hourlyHtml += `<div class="forecast-hour animate-fade-in">
-                            <div style="font-size:1.2em;font-weight:bold;">${hour.getHours()}:00</div>
-                            <span style="font-size:2.2em;">${iconUrl}</span>
-                            <div style="font-size:1.5em;font-weight:bold;margin:4px 0;">${temp}°C</div>
-                            <div style="font-size:0.98em;color:#2471a3;">${TEXT.wind}: ${windSpeed} ${TEXT.windUnit} ${windDirectionText(windDir)}</div>
-                            <div style="font-size:0.98em;">${TEXT.humidity}: ${humidity}%</div>
-                            <div style="font-size:0.98em;">${TEXT.precip}: ${precipitation} mm</div>
+                            <div style="font-size:1em;font-weight:bold;">${hour.getHours()}:00</div>
+                            <span style="font-size:1.6em;">${iconUrl}</span>
+                            <div style="font-size:1.2em;font-weight:bold;margin:2px 0;">${temp}°C</div>
+                            <div style="font-size:0.9em;color:#2471a3;">${TEXT.wind}: ${windSpeed} ${TEXT.windUnit} ${windDirectionText(windDir)}</div>
+                            <div style="font-size:0.9em;">${TEXT.humidity}: ${humidity}%</div>
+                            <div style="font-size:0.9em;">${TEXT.precip}: ${precipitation} mm</div>
                         </div>`;
                     }
                 }
@@ -322,15 +419,10 @@ async function getWeather(isRelang, explicitCoords) {
             }
         }
         showCityMain();
-        document.getElementById('btnDaily').onclick = () => {
-            renderDailyForecast();
-            pushCityViewState(lastSearchedCity, 'daily', lat, lon);
-        };
         document.getElementById('btnHourly').onclick = () => {
             renderHourlyForecast();
             pushCityViewState(lastSearchedCity, 'hourly', lat, lon);
         };
-        window.__renderDailyForecast = renderDailyForecast;
         window.__renderHourlyForecast = renderHourlyForecast;
         window.__showCityMain = showCityMain;
     } catch (err) {
@@ -357,6 +449,21 @@ function getMeteoIcon(code, isDay) {
     if (night && emojiMapNight[code] !== undefined) return emojiMapNight[code];
     return emojiMapDay[code] || '❔';
 }
+
+// Open-Meteo weather code to a short condition label (used in the 7-day list)
+function getMeteoCondition(code) {
+    const conditionMap = {
+        0: 'Sunny', 1: 'Sunny', 2: 'Cloudy', 3: 'Cloudy',
+        45: 'Foggy', 48: 'Foggy',
+        51: 'Rainy', 53: 'Rainy', 55: 'Rainy', 56: 'Rainy', 57: 'Rainy',
+        61: 'Rainy', 63: 'Rainy', 65: 'Rainy', 66: 'Rainy', 67: 'Rainy',
+        71: 'Snowy', 73: 'Snowy', 75: 'Snowy', 77: 'Snowy',
+        80: 'Rainy', 81: 'Rainy', 82: 'Rainy', 85: 'Snowy', 86: 'Snowy',
+        95: 'Storm', 96: 'Storm', 99: 'Storm',
+    };
+    return conditionMap[code] || 'Unknown';
+}
+
 
 // --- HOME PAGE: static list of 10 major cities ---
 async function showCapitalsWeather() {
@@ -459,19 +566,18 @@ window.addEventListener('popstate', async (e) => {
         : null;
     if (!state || state.view === 'home') {
         showHome();
+        showCapitalsWeather();
     } else if (state.view === 'city') {
         document.getElementById('cityInput').value = state.city;
         lastSearchedCity = state.city;
         showSearch();
         await getWeather(true, stateCoords);
-    } else if (state.view === 'daily' || state.view === 'hourly') {
+    } else if (state.view === 'hourly') {
         document.getElementById('cityInput').value = state.city;
         lastSearchedCity = state.city;
         showSearch();
         await getWeather(true, stateCoords);
-        if (state.view === 'daily' && typeof window.__renderDailyForecast === 'function') {
-            window.__renderDailyForecast();
-        } else if (state.view === 'hourly' && typeof window.__renderHourlyForecast === 'function') {
+        if (typeof window.__renderHourlyForecast === 'function') {
             window.__renderHourlyForecast();
         }
     }
@@ -485,7 +591,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('cityInput').placeholder = TEXT.searchPlaceholder;
     document.getElementById('searchBtn').textContent = TEXT.searchBtn;
 
-    const initialHashMatch = location.hash.match(/^#city\/([^/]+)(?:\/(daily|hourly))?$/);
+    const initialHashMatch = location.hash.match(/^#city\/([^/]+)(?:\/(hourly))?$/);
     if (initialHashMatch) {
         const initialCity = decodeURIComponent(initialHashMatch[1]);
         const initialView = initialHashMatch[2];
@@ -497,9 +603,7 @@ window.addEventListener('DOMContentLoaded', async () => {
         document.getElementById('cityInput').value = initialCity;
         showSearch();
         await getWeather();
-        if (initialView === 'daily' && typeof window.__renderDailyForecast === 'function') {
-            window.__renderDailyForecast();
-        } else if (initialView === 'hourly' && typeof window.__renderHourlyForecast === 'function') {
+        if (initialView === 'hourly' && typeof window.__renderHourlyForecast === 'function') {
             window.__renderHourlyForecast();
         }
     } else {
@@ -511,6 +615,7 @@ window.addEventListener('DOMContentLoaded', async () => {
         e.preventDefault();
         showHome();
         pushHomeState();
+        showCapitalsWeather();
     };
     const cityInput = document.getElementById('cityInput');
     const searchBtn = document.getElementById('searchBtn');
