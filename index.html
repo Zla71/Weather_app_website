@@ -1,32 +1,22 @@
 <!DOCTYPE html>
-<html lang="bg">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>Прогноза за времето</title>
+    <title>Weather Forecast</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <header class="main-header">
-        <a href="#" class="logo" id="logo">Прогноза за времето</a>
-        <div class="lang-switcher">
-            <button id="langBg" type="button" title="Български">🇧🇬</button>
-            <button id="langEn" type="button" title="English">🇬🇧</button>
-            <button id="langEs" type="button" title="Español">🇪🇸</button>
-        </div>
+        <a href="#" class="logo" id="logo">Weather Forecast</a>
         <form id="headerSearchForm" class="header-search" autocomplete="off" onsubmit="return false;">
-            <input type="text" id="cityInput" placeholder="Въведи град">
-            <button id="searchBtn" type="button">Търси</button>
-            <button id="radarBtn" type="button">Радар</button>
+            <input type="text" id="cityInput" placeholder="Enter city">
+            <button id="searchBtn" type="button">Search</button>
         </form>
     </header>
     <main id="mainContent">
         <section id="homeSection">
-            <div id="recentCitiesSection" style="display:none;">
-                <h2 class="subtitle" id="recentCitiesTitle">Последно разглеждани</h2>
-                <div id="recentCitiesWeather" class="capitals-grid"></div>
-            </div>
-            <h2 class="subtitle" id="capitalsSubtitle">Времето във вашето местоположение</h2>
+            <h2 class="subtitle" id="capitalsSubtitle">Weather in some of the largest cities</h2>
             <div id="capitalsWeather" class="capitals-grid"></div>
         </section>
         <section id="searchSection" style="display:none;">
@@ -34,39 +24,7 @@
                 <div id="weatherResult"></div>
             </div>
         </section>
-        <section id="radarSection" style="display:none;">
-            <div class="container">
-                <div class="radar-header">
-                    <button id="radarBackBtn" type="button">Назад</button>
-                    <strong id="radarTitle" class="radar-title">Радар</strong>
-                </div>
-                <div id="radarMapWrap" class="radar-map-wrap">
-                    <div id="radarMap" class="radar-map"></div>
-                    <div id="radarTimeLabel" class="radar-time-label"></div>
-                </div>
-                <div class="radar-controls">
-                    <button id="radarPlayBtn" type="button">▶</button>
-                    <input type="range" id="radarSlider" min="0" max="0" value="0" step="1">
-                </div>
-                <div class="radar-legend" id="radarLegend">
-                    <div class="radar-legend-group">
-                        <span class="radar-legend-label" id="radarLegendRain">Дъжд</span>
-                        <span class="radar-legend-swatch" style="background: linear-gradient(90deg, #2ecc71, #f1c40f, #e67e22, #e74c3c, #b71540);"></span>
-                    </div>
-                    <div class="radar-legend-group">
-                        <span class="radar-legend-label" id="radarLegendSnow">Сняг</span>
-                        <span class="radar-legend-swatch" style="background: linear-gradient(90deg, #aee9f7, #4fc3f7, #2196f3, #1a56c4);"></span>
-                    </div>
-                    <div class="radar-legend-group">
-                        <span class="radar-legend-label" id="radarLegendMixed">Смесени/заледяващи</span>
-                        <span class="radar-legend-swatch" style="background: linear-gradient(90deg, #f3a6f7, #e066e8, #c239d6, #9b1fb0);"></span>
-                    </div>
-                </div>
-            </div>
-        </section>
     </main>
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
     <script src="app.js"></script>
 </body>
 </html>

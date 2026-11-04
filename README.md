@@ -1,6 +1,6 @@
 # Weather Forecast App 🌤️
 
-A modern, multilingual weather forecast web application built with vanilla JavaScript, HTML, and CSS. The app provides real-time weather information for cities worldwide, with support for **Bulgarian**, **English**, and **Spanish** languages.
+A modern weather forecast web application built with vanilla JavaScript, HTML, and CSS. The app provides real-time weather information for cities worldwide, with an English-only interface.
 
 **Live site:** https://zla71.github.io/Weather_app_website/
 
@@ -11,35 +11,28 @@ A modern, multilingual weather forecast web application built with vanilla JavaS
 - **7-Day Forecast**: Extended weather predictions with daily high/low temperatures and precipitation
 - **Hourly Forecast**: Detailed 48-hour weather outlook with hourly temperature, wind, humidity, and precipitation data
 - **City Search**: Search for any city worldwide and get instant weather information
-- **Capital Cities Display**: Homepage shows weather for major European capitals (London, Paris, Berlin, Madrid, Rome, Vienna, Budapest, Athens, Bucharest, Sofia)
+- **Major Cities Display**: Homepage shows weather for 10 of the world's largest cities (Beijing, Tokyo, Moscow, Jakarta, Lima, Cairo, Seoul, Mexico City, London, Dhaka) — no location permission is ever requested
+- **5-Minute Response Caching**: Weather/geocoding API responses are cached in memory for 5 minutes to avoid hitting free-tier API rate limits when revisiting the homepage or a city
 
 ### 🗺️ Enhanced City Information
 - **Wikipedia Integration**: Displays city description and history fetched from Wikipedia API
 - **City Images**: Automatically loads and displays images of searched cities
 - **OpenStreetMap Embed**: Interactive map showing the exact location of the searched city
 
-### 🌐 Multilingual Support
-- **Bulgarian (Български)**: Full interface in Bulgarian with Cyrillic text
-- **English**: Complete English translations
-- **Spanish (Español)**: Full interface in Spanish
-- **Language Switcher**: Easy toggle buttons in the header with flag emojis (🇧🇬 🇬🇧 🇪🇸)
-- **Dynamic Translation**: Interface updates instantly when language is changed
-
 ### 🎨 User Interface
-- **Modern Design**: Gradient background (blue to cyan) with clean card-based layouts
+- **Modern Dark Theme**: Clean, card-based layout with a dark navy background and red accents
 - **Responsive Layout**: Fully responsive design that works on desktop, tablet, and mobile devices
 - **Smooth Animations**: Fade-in effects for forecast cards and hourly data
-- **Interactive Cards**: Clickable capital city cards for quick weather access
-- **Intuitive Navigation**: Sticky header with search bar, logo click returns to home
+- **Interactive Cards**: Clickable city cards for quick weather access, showing city, country, temperature, and wind
+- **Intuitive Navigation**: Sticky header with search bar, logo click returns to home, browser Back/Forward supported via URL routing
 
 ## Technology Stack
 
 ### APIs Used
-- **OpenCage Geocoding API**: Converts city names to coordinates (supports multilingual queries)
-- **Open-Meteo API**: Free weather forecast data with multilingual support
+- **OpenCage Geocoding API**: Converts city names to coordinates
+- **Open-Meteo API**: Free weather forecast data (current, daily, and hourly)
 - **Wikipedia API**: City descriptions and images
 - **OpenStreetMap**: Interactive map embedding
-- **Nominatim (OSM)**: Alternative geocoding for capital cities
 
 ### Frontend Technologies
 - **HTML5**: Semantic markup and structure
@@ -75,16 +68,15 @@ git clone https://github.com/Zla71/Weather_app_website.git
 
 ### Using the App
 
-1. **Homepage**: See current weather for major European capitals
+1. **Homepage**: See current weather for 10 of the world's largest cities
 2. **Search**: Use the search bar at the top to find any city
-3. **View Details**: Click on a capital city card or search for a new city to see:
+3. **View Details**: Click on a city card or search for a new city to see:
    - Current weather with conditions
    - City information and description
    - Interactive map location
 4. **Forecast Modes**: Switch between:
    - **7-Day Forecast**: Daily weather overview
    - **Hourly Forecast**: Detailed 48-hour predictions
-5. **Language**: Click the flag buttons (🇧🇬 🇬🇧 🇪🇸) to change the interface language
 
 ## Key Functionality
 
@@ -110,33 +102,26 @@ git clone https://github.com/Zla71/Weather_app_website.git
 - Humidity percentage
 - Precipitation amount
 
-### Language Support
-The app maintains a `LANGS` object containing translations for:
-- UI elements (titles, buttons, placeholders)
-- Weather descriptors
-- Wind direction abbreviations (Cardinal directions in local language)
+### Caching
+To stay within the free API rate limits, all outgoing API requests (OpenCage, Open-Meteo, Wikipedia) go through a shared in-memory cache (`cachedFetchJson` in `app.js`) with a 5-minute TTL. Repeated requests for the same URL within that window are served from the cache instead of hitting the network again. Homepage city requests are also staggered and retried with backoff to reduce the chance of transient failures leaving a city card blank.
 
 ## API Integrations
 
 ### OpenCage Geocoding
 - Converts city names to latitude/longitude coordinates
-- Supports multilingual city name queries
 - Rate limit: 2,500 requests/day (free tier)
 
 ### Open-Meteo
 - Provides weather forecast data
 - No API key required
-- Supports 100+ languages
 - Data includes: temperature, weather codes, precipitation, wind data
 
 ### Wikipedia
 - Fetches city descriptions and summaries
 - Provides city images and media
-- Multilingual support (queries adjusted per selected language)
 
-### OpenStreetMap & Nominatim
+### OpenStreetMap
 - Interactive map display for city locations
-- Geocoding for capital cities
 - Free and open-source
 
 ## Browser Compatibility
@@ -162,17 +147,17 @@ Tested on:
 
 ## Code Architecture
 
-### Main Components
+### Main Components (`app.js`)
 
-**Language Management** (`app.js` lines 1-100)
-- `LANGS` object: Centralized translations for Bulgarian, English, and Spanish
-- `setLang(lang)`: Updates entire UI to selected language
-- `windDirectionText(deg)`: Converts wind direction degrees to localized compass text
+**Text & Caching**
+- `TEXT` object: Centralized English UI strings
+- `cachedFetchJson(url)`: Fetch wrapper with a 5-minute in-memory cache (`fetchCache`) to avoid rate-limit errors
+- `windDirectionText(deg)`: Converts wind direction degrees to compass text
 
-**Weather Fetching** (`app.js` lines 159-360)
+**Weather Fetching**
 - `getWeather()`: Main function that:
-  1. Takes user input (city name)
-  2. Uses OpenCage API to get coordinates
+  1. Takes user input (city name) or explicit coordinates (e.g. from a clicked city card)
+  2. Uses OpenCage API to get coordinates / localized name
   3. Fetches Wikipedia data (description and images)
   4. Gets current and forecast weather from Open-Meteo
   5. Displays results with interactive buttons for 7-day and hourly forecasts
@@ -181,31 +166,32 @@ Tested on:
 - `renderDailyForecast()`: Shows 7-day forecast with cards
 - `renderHourlyForecast()`: Displays 48-hour detailed forecast in grid layout
 
-**Homepage** (`app.js` lines 405-494)
-- `showCapitalsWeather()`: Loads and displays 10 major European capitals
+**Homepage**
+- `worldCities`: Static list of the 10 major cities shown on the homepage
+- `showCapitalsWeather()`: Loads and displays weather for all 10 cities (staggered requests + retries with backoff)
 - `showHome()` / `showSearch()`: Navigation between homepage and search results
+- URL routing (`pushHomeState`, `pushCityState`, `pushCityViewState`, `popstate` handler) keeps Back/Forward browser navigation in sync with the current view
 
 ### Styling Highlights (`style.css`)
-- Gradient background: `linear-gradient(120deg, #89f7fe 0%, #66a6ff 100%)`
-- Color scheme: Primary blue (#2471a3), accent cyan (#89f7fe)
+- Dark navy theme with red accent color
 - Animations: Smooth fade-in effects with transform transitions
 - Grid system: Responsive hourly grid (8 → 4 → 2 → 1 columns)
 
 ## Future Enhancements
 
 Potential improvements:
-- [ ] Save favorite cities to local storage
+- [ ] Save favorite/recently viewed cities to local storage
 - [ ] Weather alerts and notifications
 - [ ] Air quality index display
 - [ ] UV index information
 - [ ] Historical weather data
 - [ ] PWA support for offline access
-- [ ] Dark mode theme
-- [ ] More language options
+- [ ] Light mode theme
+- [ ] Multi-language support
 
 ## End-to-End Testing (Cypress)
 
-The app has an automated Cypress test suite covering the homepage, language switcher, and city search flow (7-day/hourly forecasts, back navigation, and logo navigation). All external APIs (OpenCage, Open-Meteo, Wikipedia, Nominatim) are stubbed with `cy.intercept`, so the tests run deterministically and offline.
+The app has an automated Cypress test suite covering the homepage and the city search flow (7-day/hourly forecasts, back navigation, and logo navigation). All external APIs (OpenCage, Open-Meteo, Wikipedia) are stubbed with `cy.intercept`, so the tests run deterministically and offline.
 
 ### Setup
 ```bash
@@ -223,10 +209,11 @@ Test files live in `cypress/e2e/`, fixtures in `cypress/fixtures/`, and shared s
 
 ## Notes
 
-- No API keys required for Open-Meteo and Nominatim
+- No API key required for Open-Meteo
 - OpenCage API key is embedded in the code (for demo purposes)
 - Consider securing API keys in production environments
-- Weather data updates according to API refresh intervals
+- Weather data updates according to API refresh intervals, subject to the 5-minute response cache described above
+- The app never requests the user's geolocation; the homepage always shows the same static list of 10 cities
 
 ## Author
 
