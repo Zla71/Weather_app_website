@@ -8,9 +8,7 @@ Cypress.Commands.add('stubWeatherApis', () => {
   });
 
   cy.intercept('GET', 'https://api.open-meteo.com/v1/forecast*', (req) => {
-    if (req.url.includes('daily=')) {
-      req.reply({ fixture: 'openMeteoDaily.json' });
-    } else if (req.url.includes('hourly=temperature_2m')) {
+    if (req.url.includes('hourly=temperature_2m')) {
       // The hourly-forecast endpoint expects data within the next 48h from "now",
       // so it is generated relative to the current time instead of a static fixture.
       // Open-Meteo returns local (timezone=auto) time strings without a "Z" suffix,
@@ -36,6 +34,8 @@ Cypress.Commands.add('stubWeatherApis', () => {
           precipitation: [0, 0.1],
         },
       });
+    } else if (req.url.includes('daily=')) {
+      req.reply({ fixture: 'openMeteoDaily.json' });
     } else {
       req.reply({ fixture: 'openMeteoCurrent.json' });
     }

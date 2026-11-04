@@ -1,27 +1,22 @@
 <!DOCTYPE html>
-<html lang="bg">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>Прогноза за времето</title>
+    <title>Weather Forecast</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <header class="main-header">
-        <a href="#" class="logo" id="logo">Прогноза за времето</a>
-        <div class="lang-switcher">
-            <button id="langBg" type="button" title="Български">🇧🇬</button>
-            <button id="langEn" type="button" title="English">🇬🇧</button>
-            <button id="langEs" type="button" title="Español">🇪🇸</button>
-        </div>
+        <a href="#" class="logo" id="logo">Weather Forecast</a>
         <form id="headerSearchForm" class="header-search" autocomplete="off" onsubmit="return false;">
-            <input type="text" id="cityInput" placeholder="Въведи град">
-            <button id="searchBtn" type="button">Търси</button>
+            <input type="text" id="cityInput" placeholder="Enter city">
+            <button id="searchBtn" type="button">Search</button>
         </form>
     </header>
     <main id="mainContent">
         <section id="homeSection">
-            <h2 class="subtitle">Времето във вашето местоположение</h2>
+            <h2 class="subtitle" id="capitalsSubtitle">Weather in some of the largest cities</h2>
             <div id="capitalsWeather" class="capitals-grid"></div>
         </section>
         <section id="searchSection" style="display:none;">
@@ -33,3 +28,4 @@
     <script src="app.js"></script>
 </body>
 </html>
+
