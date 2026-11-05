@@ -352,8 +352,10 @@ async function getWeather(isRelang, explicitCoords) {
         cityInfoHtml += `<div id="forecastContainer"></div>`;
 
         const mapHtml = `<div class="city-map-wrap" id="cityMapWrap">
-            <iframe class="city-map" loading="lazy" title="${displayName.split(',')[0]}"
-                src="https://www.openstreetmap.org/export/embed.html?layer=mapnik&marker=${lat}%2C${lon}&zoom=12&mlat=${lat}&mlon=${lon}"></iframe>
+            <div class="city-map-clip">
+                <iframe class="city-map" loading="lazy" title="${displayName.split(',')[0]}"
+                    src="https://www.openstreetmap.org/export/embed.html?layer=mapnik&marker=${lat}%2C${lon}&zoom=12&mlat=${lat}&mlon=${lon}"></iframe>
+            </div>
         </div>`;
 
         const fullLayoutHtml = `<div class="city-detail-layout">

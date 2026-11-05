@@ -687,15 +687,22 @@ button:hover {
     padding: 10px;
     overflow: hidden;
 }
+.city-map-clip {
+    flex: 1;
+    min-height: 240px;
+    overflow: hidden;
+    border-radius: 10px;
+    position: relative;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+}
 .city-map {
     width: 100%;
     max-width: none;
-    height: 100%;
-    min-height: 240px;
-    flex: 1;
+    /* OSM embed includes a footer attribution bar; extend the iframe and clip it. */
+    height: calc(100% + 92px);
+    min-height: calc(240px + 92px);
     border: 0;
-    border-radius: 10px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+    display: block;
 }
 
 .city-info-panel button {
@@ -763,8 +770,14 @@ button:hover {
         padding: 24px 18px 20px;
         margin: 20px auto;
     }
-    .city-map {
+    .city-map-clip {
+        min-height: 220px;
         height: 220px;
+        flex: none;
+    }
+    .city-map {
+        min-height: calc(220px + 92px);
+        height: calc(220px + 92px);
     }
     .city-detail-layout {
         grid-template-columns: 1fr;
@@ -848,8 +861,14 @@ button:hover {
     .forecast-mode-buttons button {
         width: 100%;
     }
-    .city-map {
+    .city-map-clip {
+        min-height: 180px;
         height: 180px;
+        flex: none;
+    }
+    .city-map {
+        min-height: calc(180px + 92px);
+        height: calc(180px + 92px);
     }
     button {
         margin-left: 0;
