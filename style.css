@@ -334,6 +334,38 @@ button:hover {
     color: var(--aw-text-muted);
 }
 
+.capital-card {
+    position: relative;
+}
+.favourite-star {
+    position: absolute;
+    top: 12px;
+    right: 14px;
+    font-size: 1.3em;
+    cursor: pointer;
+    color: var(--aw-text-muted);
+    opacity: 0.6;
+    transition: color 0.2s, opacity 0.2s, transform 0.2s;
+    line-height: 1;
+    user-select: none;
+    z-index: 2;
+}
+.favourite-star:hover {
+    transform: scale(1.15);
+    opacity: 1;
+}
+.favourite-star.active {
+    color: var(--aw-orange);
+    opacity: 1;
+}
+
+.city-detail-main .favourite-star {
+    position: static;
+    font-size: 1.6em;
+    margin-left: 10px;
+}
+
+
 .subtitle {
     color: var(--aw-text-muted);
     font-size: 1.3em;
@@ -375,6 +407,13 @@ button:hover {
     flex-direction: column;
     align-items: center;
     margin-bottom: 4px;
+    position: relative;
+    width: 100%;
+}
+.city-header .favourite-star {
+    position: absolute;
+    top: 0;
+    right: 0;
 }
 .city-header-name {
     font-size: 1.8em;
@@ -648,15 +687,96 @@ button:hover {
     padding: 10px;
     overflow: hidden;
 }
+.city-map-clip {
+    flex: 1;
+    min-height: 240px;
+    overflow: hidden;
+    border-radius: 10px;
+    position: relative;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+}
 .city-map {
     width: 100%;
     max-width: none;
-    height: 100%;
-    min-height: 240px;
-    flex: 1;
+    /* OSM embed includes a footer attribution bar; extend the iframe and clip it. */
+    height: calc(100% + 92px);
+    min-height: calc(240px + 92px);
     border: 0;
+    display: block;
+}
+
+.tourist-flow-panel {
+    background: var(--aw-card);
+    border: 1px solid var(--aw-border);
+    border-radius: 14px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.35);
+    padding: 18px 20px;
+    margin-top: 16px;
+}
+.tourist-flow-title {
+    font-size: 0.85em;
+    color: var(--aw-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-weight: 700;
+    margin-bottom: 12px;
+    text-align: center;
+}
+.tourist-flow-chart {
+    width: 100%;
+    height: auto;
+    min-height: 320px;
+    display: block;
+}
+.tourist-flow-point-label {
+    fill: var(--aw-text);
+    font-size: 15px;
+    font-weight: 700;
+}
+.tourist-flow-month-label {
+    fill: var(--aw-text-muted);
+    font-size: 14px;
+}
+
+.seasonal-temps-panel {
+    background: var(--aw-card);
+    border: 1px solid var(--aw-border);
+    border-radius: 14px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.35);
+    padding: 18px 20px;
+}
+.seasonal-temps-title {
+    font-size: 0.85em;
+    color: var(--aw-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-weight: 700;
+    margin-bottom: 14px;
+    text-align: center;
+}
+.seasonal-temps-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+.seasonal-temp-item {
+    background: var(--aw-navy-lighter);
+    border: 1px solid var(--aw-border);
     border-radius: 10px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+    padding: 14px 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+}
+.seasonal-temp-icon {
+    font-size: 1.8em;
+}
+.seasonal-temp-label {
+    font-size: 0.9em;
+    font-weight: 700;
+    color: var(--aw-text);
+    text-align: center;
 }
 
 .city-info-panel button {
@@ -724,8 +844,14 @@ button:hover {
         padding: 24px 18px 20px;
         margin: 20px auto;
     }
-    .city-map {
+    .city-map-clip {
+        min-height: 220px;
         height: 220px;
+        flex: none;
+    }
+    .city-map {
+        min-height: calc(220px + 92px);
+        height: calc(220px + 92px);
     }
     .city-detail-layout {
         grid-template-columns: 1fr;
@@ -809,8 +935,14 @@ button:hover {
     .forecast-mode-buttons button {
         width: 100%;
     }
-    .city-map {
+    .city-map-clip {
+        min-height: 180px;
         height: 180px;
+        flex: none;
+    }
+    .city-map {
+        min-height: calc(180px + 92px);
+        height: calc(180px + 92px);
     }
     button {
         margin-left: 0;

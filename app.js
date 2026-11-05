@@ -30,6 +30,71 @@ let lastSearchedCity = '';
 let lastSearchedCoords = null; // { lat, lon } | null
 let currentView = 'main'; // 'main' | 'daily' | 'hourly'
 
+// --- Favourites (persisted in localStorage) ---
+const FAVOURITES_KEY = 'weatherAppFavourites';
+
+function getFavourites() {
+    try {
+        const raw = localStorage.getItem(FAVOURITES_KEY);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+        return [];
+    }
+}
+
+function saveFavourites(favourites) {
+    try {
+        localStorage.setItem(FAVOURITES_KEY, JSON.stringify(favourites));
+    } catch (e) { /* ignore storage errors */ }
+}
+
+function makeFavouriteKey(name, country) {
+    return `${(name || '').trim().toLowerCase()}|${(country || '').trim().toLowerCase()}`;
+}
+
+function isFavouriteCity(name, country) {
+    const key = makeFavouriteKey(name, country);
+    return getFavourites().some(f => makeFavouriteKey(f.name, f.country) === key);
+}
+
+function toggleFavouriteCity(city) {
+    const favourites = getFavourites();
+    const key = makeFavouriteKey(city.name, city.country);
+    const idx = favourites.findIndex(f => makeFavouriteKey(f.name, f.country) === key);
+    if (idx !== -1) {
+        favourites.splice(idx, 1);
+    } else {
+        favourites.push(city);
+    }
+    saveFavourites(favourites);
+    return idx === -1; // true if it was just added
+}
+
+function createFavouriteStar(city, onToggle) {
+    const star = document.createElement('span');
+    star.className = 'favourite-star';
+    star.textContent = '★';
+    star.title = 'Add to favourites';
+    const refreshState = () => {
+        const active = isFavouriteCity(city.name, city.country);
+        star.classList.toggle('active', active);
+        star.title = active ? 'Remove from favourites' : 'Add to favourites';
+    };
+    refreshState();
+    star.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleFavouriteCity(city);
+        refreshState();
+        if (typeof onToggle === 'function') onToggle();
+        if (typeof window.__refreshFavouritesSection === 'function') {
+            window.__refreshFavouritesSection();
+        }
+    });
+    return star;
+}
+
 function windDirectionText(deg) {
     if (deg === undefined || deg === null || deg === '-' || isNaN(deg)) return '-';
     const dirs = TEXT.windDirs;
@@ -66,6 +131,261 @@ const worldCities = [
     { name: 'London', country: 'United Kingdom', lat: 51.5074, lon: -0.1278 },
     { name: 'Dhaka', country: 'Bangladesh', lat: 23.8103, lon: 90.4125 }
 ];
+
+// --- Static monthly tourist flow data (approximate, in millions of visitors) ---
+// Only cities present here will show the "Monthly Tourist Flow" panel.
+// Covers a broad set of the world's most-visited tourist cities.
+const touristFlowData = {
+    'london': [1.1, 1.0, 1.3, 1.6, 1.7, 1.8, 1.9, 1.9, 1.7, 1.6, 1.5, 1.8],
+    'paris': [1.2, 1.3, 1.5, 1.7, 1.8, 1.9, 2.0, 1.8, 1.9, 1.7, 1.4, 1.6],
+    'new york': [2.4, 2.3, 2.6, 2.8, 3.0, 3.2, 3.4, 3.3, 3.0, 2.9, 2.7, 3.1],
+    'tokyo': [1.0, 0.9, 1.2, 1.4, 1.3, 1.1, 1.3, 1.2, 1.2, 1.5, 1.4, 1.3],
+    'moscow': [0.5, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 0.9, 0.8, 0.6, 0.5, 0.7],
+    'cairo': [1.1, 1.0, 0.9, 0.8, 0.6, 0.5, 0.5, 0.5, 0.6, 0.8, 1.0, 1.2],
+    'seoul': [0.9, 0.8, 1.0, 1.1, 1.0, 0.9, 0.8, 0.9, 1.0, 1.2, 1.0, 1.1],
+    'mexico city': [1.0, 0.9, 1.0, 1.1, 0.9, 0.8, 0.9, 0.9, 0.8, 0.9, 1.0, 1.2],
+    'rome': [1.0, 1.0, 1.3, 1.6, 1.8, 2.0, 2.1, 1.9, 1.8, 1.6, 1.2, 1.3],
+    'barcelona': [1.0, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0, 2.0, 1.7, 1.5, 1.1, 1.2],
+    'dubai': [1.6, 1.5, 1.4, 1.2, 1.0, 0.9, 1.0, 1.0, 1.1, 1.3, 1.5, 1.8],
+    'bangkok': [2.2, 2.0, 1.7, 1.5, 1.2, 1.1, 1.2, 1.2, 1.1, 1.4, 1.8, 2.3],
+    'singapore': [1.5, 1.4, 1.5, 1.4, 1.3, 1.4, 1.5, 1.4, 1.3, 1.4, 1.5, 1.6],
+    'istanbul': [0.9, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 1.8, 1.6, 1.3, 1.0, 1.1],
+    'amsterdam': [0.9, 0.8, 1.0, 1.2, 1.3, 1.4, 1.5, 1.5, 1.3, 1.1, 0.9, 1.0],
+    'sydney': [1.1, 1.0, 0.9, 0.8, 0.7, 0.7, 0.8, 0.8, 0.9, 1.0, 1.1, 1.3],
+    'madrid': [0.9, 0.9, 1.1, 1.3, 1.4, 1.5, 1.6, 1.5, 1.4, 1.3, 1.0, 1.1],
+    'berlin': [0.8, 0.8, 1.0, 1.1, 1.2, 1.3, 1.4, 1.4, 1.3, 1.1, 0.9, 1.0],
+    'vienna': [0.7, 0.7, 0.9, 1.0, 1.1, 1.2, 1.3, 1.3, 1.1, 1.0, 0.8, 1.0],
+    'prague': [0.6, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.6, 1.3, 1.1, 0.7, 0.8],
+    'lisbon': [0.7, 0.7, 0.9, 1.1, 1.3, 1.5, 1.7, 1.7, 1.4, 1.2, 0.8, 0.9],
+    'athens': [0.6, 0.6, 0.8, 1.0, 1.3, 1.6, 1.9, 1.9, 1.5, 1.1, 0.7, 0.7],
+    'dublin': [0.5, 0.5, 0.7, 0.8, 0.9, 1.0, 1.1, 1.1, 0.9, 0.8, 0.6, 0.7],
+    'brussels': [0.5, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 0.9, 0.8, 0.7, 0.6, 0.6],
+    'zurich': [0.5, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.0, 0.8, 0.7, 0.6, 0.6],
+    'munich': [0.6, 0.6, 0.7, 0.8, 0.9, 1.0, 1.2, 1.5, 1.3, 1.0, 0.7, 0.9],
+    'milan': [0.8, 0.8, 1.0, 1.1, 1.2, 1.2, 1.1, 0.9, 1.1, 1.1, 0.9, 1.0],
+    'venice': [0.7, 0.7, 1.0, 1.3, 1.5, 1.7, 1.8, 1.7, 1.5, 1.3, 0.9, 0.9],
+    'florence': [0.5, 0.6, 0.8, 1.1, 1.3, 1.4, 1.5, 1.4, 1.3, 1.1, 0.7, 0.7],
+    'warsaw': [0.4, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.9, 0.7, 0.6, 0.5, 0.5],
+    'budapest': [0.5, 0.5, 0.7, 0.9, 1.1, 1.3, 1.5, 1.5, 1.2, 1.0, 0.6, 0.7],
+    'copenhagen': [0.4, 0.4, 0.5, 0.6, 0.8, 1.0, 1.1, 1.0, 0.8, 0.6, 0.5, 0.5],
+    'stockholm': [0.4, 0.4, 0.5, 0.6, 0.8, 1.0, 1.1, 1.0, 0.8, 0.6, 0.5, 0.5],
+    'oslo': [0.3, 0.3, 0.4, 0.5, 0.6, 0.8, 0.9, 0.8, 0.6, 0.5, 0.4, 0.4],
+    'helsinki': [0.3, 0.3, 0.4, 0.5, 0.6, 0.8, 0.9, 0.8, 0.6, 0.5, 0.4, 0.4],
+    'reykjavik': [0.2, 0.2, 0.2, 0.3, 0.4, 0.5, 0.6, 0.6, 0.4, 0.3, 0.2, 0.3],
+    'edinburgh': [0.4, 0.4, 0.5, 0.6, 0.7, 0.8, 1.0, 1.2, 0.9, 0.6, 0.5, 0.5],
+    'manchester': [0.3, 0.3, 0.4, 0.5, 0.5, 0.6, 0.6, 0.6, 0.5, 0.5, 0.4, 0.4],
+    'frankfurt': [0.5, 0.5, 0.6, 0.7, 0.7, 0.8, 0.8, 0.8, 0.8, 0.7, 0.6, 0.6],
+    'geneva': [0.3, 0.3, 0.4, 0.5, 0.5, 0.6, 0.7, 0.6, 0.6, 0.5, 0.4, 0.4],
+    'krakow': [0.3, 0.3, 0.4, 0.5, 0.7, 0.9, 1.0, 1.0, 0.8, 0.6, 0.4, 0.4],
+    'st petersburg': [0.3, 0.3, 0.4, 0.5, 0.8, 1.1, 1.3, 1.2, 0.9, 0.6, 0.4, 0.4],
+    'nice': [0.4, 0.4, 0.5, 0.6, 0.7, 0.9, 1.1, 1.1, 0.8, 0.6, 0.5, 0.5],
+    'lyon': [0.4, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.8, 0.7, 0.6, 0.5, 0.5],
+    'marseille': [0.4, 0.4, 0.5, 0.6, 0.7, 0.9, 1.1, 1.1, 0.8, 0.6, 0.5, 0.5],
+    'porto': [0.4, 0.4, 0.5, 0.7, 0.8, 0.9, 1.0, 1.0, 0.8, 0.7, 0.5, 0.5],
+    'seville': [0.5, 0.5, 0.7, 0.9, 1.0, 0.9, 0.7, 0.6, 0.8, 0.9, 0.6, 0.6],
+    'valencia': [0.5, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.0, 0.8, 0.7, 0.6, 0.6],
+    'malaga': [0.5, 0.5, 0.6, 0.7, 0.8, 0.9, 1.1, 1.1, 0.9, 0.7, 0.6, 0.6],
+    'palma de mallorca': [0.3, 0.3, 0.4, 0.6, 0.9, 1.2, 1.5, 1.5, 1.1, 0.7, 0.4, 0.3],
+    'naples': [0.5, 0.5, 0.7, 0.9, 1.0, 1.1, 1.2, 1.1, 1.0, 0.9, 0.6, 0.6],
+    'turin': [0.4, 0.4, 0.5, 0.6, 0.6, 0.6, 0.6, 0.5, 0.6, 0.6, 0.5, 0.5],
+    'verona': [0.3, 0.4, 0.5, 0.7, 0.8, 0.8, 0.8, 0.7, 0.7, 0.6, 0.4, 0.4],
+    'bologna': [0.3, 0.3, 0.4, 0.5, 0.6, 0.6, 0.6, 0.5, 0.6, 0.5, 0.4, 0.4],
+    'genoa': [0.3, 0.3, 0.4, 0.5, 0.6, 0.6, 0.7, 0.6, 0.6, 0.5, 0.4, 0.4],
+    'bucharest': [0.3, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.7, 0.6, 0.5, 0.4, 0.4],
+    'sofia': [0.3, 0.3, 0.4, 0.4, 0.5, 0.6, 0.7, 0.7, 0.6, 0.5, 0.4, 0.4],
+    'belgrade': [0.3, 0.3, 0.4, 0.4, 0.5, 0.6, 0.6, 0.6, 0.5, 0.5, 0.4, 0.4],
+    'zagreb': [0.3, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.8, 0.7, 0.5, 0.4, 0.4],
+    'ljubljana': [0.2, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.6, 0.5, 0.4, 0.3, 0.3],
+    'bratislava': [0.2, 0.2, 0.3, 0.4, 0.5, 0.5, 0.6, 0.6, 0.5, 0.4, 0.3, 0.3],
+    'vilnius': [0.2, 0.2, 0.3, 0.3, 0.4, 0.5, 0.6, 0.5, 0.4, 0.4, 0.3, 0.3],
+    'riga': [0.2, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.6, 0.5, 0.4, 0.3, 0.3],
+    'tallinn': [0.2, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.6, 0.5, 0.4, 0.3, 0.3],
+    'luxembourg': [0.2, 0.2, 0.3, 0.3, 0.4, 0.4, 0.5, 0.4, 0.4, 0.3, 0.3, 0.3],
+    'monaco': [0.2, 0.2, 0.3, 0.3, 0.4, 0.5, 0.6, 0.6, 0.5, 0.4, 0.3, 0.3],
+    'gothenburg': [0.2, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.6, 0.5, 0.4, 0.3, 0.3],
+    'bergen': [0.2, 0.2, 0.2, 0.3, 0.4, 0.5, 0.6, 0.6, 0.4, 0.3, 0.2, 0.2],
+    'rotterdam': [0.3, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.7, 0.6, 0.5, 0.4, 0.4],
+    'hamburg': [0.4, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.8, 0.7, 0.6, 0.5, 0.5],
+    'cologne': [0.4, 0.4, 0.5, 0.6, 0.7, 0.8, 0.8, 0.8, 0.7, 0.6, 0.5, 0.5],
+    'dusseldorf': [0.3, 0.3, 0.4, 0.5, 0.5, 0.6, 0.6, 0.6, 0.6, 0.5, 0.4, 0.4],
+    'thessaloniki': [0.3, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.8, 0.6, 0.5, 0.4, 0.4],
+    'belfast': [0.2, 0.2, 0.3, 0.3, 0.4, 0.5, 0.5, 0.5, 0.4, 0.4, 0.3, 0.3],
+    'glasgow': [0.3, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.8, 0.6, 0.5, 0.4, 0.4],
+    'liverpool': [0.3, 0.3, 0.4, 0.5, 0.6, 0.7, 0.7, 0.7, 0.6, 0.5, 0.4, 0.4],
+    'birmingham': [0.3, 0.3, 0.4, 0.5, 0.5, 0.6, 0.6, 0.6, 0.5, 0.5, 0.4, 0.4],
+    'bristol': [0.3, 0.3, 0.3, 0.4, 0.5, 0.6, 0.6, 0.6, 0.5, 0.4, 0.3, 0.3],
+    'cardiff': [0.2, 0.2, 0.3, 0.3, 0.4, 0.5, 0.5, 0.5, 0.4, 0.4, 0.3, 0.3],
+    'antwerp': [0.3, 0.3, 0.4, 0.5, 0.5, 0.6, 0.7, 0.6, 0.6, 0.5, 0.4, 0.4],
+    'gdansk': [0.2, 0.2, 0.3, 0.4, 0.5, 0.7, 0.9, 0.9, 0.6, 0.4, 0.3, 0.3],
+    'wroclaw': [0.2, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.7, 0.6, 0.4, 0.3, 0.3],
+    'southampton': [0.2, 0.2, 0.3, 0.3, 0.4, 0.5, 0.5, 0.5, 0.4, 0.4, 0.3, 0.3],
+    'ionian islands': [0.1, 0.1, 0.2, 0.3, 0.5, 0.8, 1.1, 1.1, 0.7, 0.4, 0.2, 0.1],
+    'burgas': [0.1, 0.1, 0.1, 0.2, 0.4, 0.7, 1.0, 1.0, 0.6, 0.3, 0.1, 0.1],
+    'varna': [0.1, 0.1, 0.2, 0.2, 0.4, 0.7, 1.0, 1.0, 0.6, 0.3, 0.2, 0.1],
+    'alicante': [0.3, 0.3, 0.4, 0.5, 0.6, 0.8, 1.0, 1.0, 0.7, 0.5, 0.3, 0.3],
+    'corfu': [0.1, 0.1, 0.2, 0.3, 0.5, 0.8, 1.1, 1.1, 0.7, 0.4, 0.2, 0.1],
+    'kefalonia': [0.1, 0.1, 0.1, 0.2, 0.4, 0.7, 1.0, 1.0, 0.6, 0.3, 0.1, 0.1],
+    'zakynthos': [0.1, 0.1, 0.1, 0.2, 0.4, 0.7, 1.0, 1.0, 0.6, 0.3, 0.1, 0.1],
+    'lefkada': [0.1, 0.1, 0.1, 0.2, 0.4, 0.7, 1.0, 1.0, 0.6, 0.3, 0.1, 0.1],
+    'shanghai': [1.3, 1.2, 1.4, 1.6, 1.7, 1.6, 1.7, 1.6, 1.6, 1.8, 1.5, 1.6],
+    'beijing': [0.9, 0.9, 1.1, 1.4, 1.5, 1.3, 1.3, 1.2, 1.4, 1.8, 1.1, 1.0],
+    'hong kong': [1.8, 1.7, 1.6, 1.4, 1.3, 1.2, 1.3, 1.3, 1.4, 1.7, 1.9, 2.1],
+    'osaka': [0.7, 0.7, 0.9, 1.1, 0.9, 0.8, 0.9, 0.9, 0.8, 1.0, 1.0, 0.9],
+    'kyoto': [0.6, 0.6, 0.9, 1.3, 0.9, 0.7, 0.7, 0.7, 0.8, 1.1, 1.3, 0.8],
+    'taipei': [0.8, 0.7, 0.8, 0.8, 0.7, 0.7, 0.8, 0.8, 0.7, 0.8, 0.8, 0.9],
+    'kuala lumpur': [1.2, 1.1, 1.1, 1.0, 1.0, 1.1, 1.2, 1.2, 1.0, 1.0, 1.1, 1.3],
+    'manila': [0.6, 0.6, 0.6, 0.6, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.6, 0.7],
+    'ho chi minh city': [0.6, 0.6, 0.5, 0.5, 0.4, 0.4, 0.4, 0.5, 0.5, 0.5, 0.6, 0.7],
+    'hanoi': [0.4, 0.4, 0.4, 0.4, 0.3, 0.3, 0.3, 0.3, 0.3, 0.4, 0.5, 0.5],
+    'bali': [0.7, 0.6, 0.6, 0.5, 0.5, 0.6, 0.7, 0.7, 0.6, 0.6, 0.6, 0.8],
+    'jakarta': [0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.5],
+    'delhi': [0.7, 0.6, 0.5, 0.4, 0.3, 0.3, 0.3, 0.3, 0.4, 0.6, 0.8, 0.9],
+    'mumbai': [0.6, 0.5, 0.4, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.5, 0.6, 0.7],
+    'dhaka': [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1],
+    'doha': [0.4, 0.4, 0.4, 0.3, 0.3, 0.2, 0.2, 0.2, 0.3, 0.3, 0.4, 0.4],
+    'abu dhabi': [0.5, 0.5, 0.5, 0.4, 0.3, 0.3, 0.3, 0.3, 0.4, 0.4, 0.5, 0.6],
+    'riyadh': [0.3, 0.3, 0.3, 0.3, 0.2, 0.2, 0.2, 0.2, 0.3, 0.3, 0.3, 0.4],
+    'jerusalem': [0.3, 0.3, 0.4, 0.4, 0.4, 0.3, 0.3, 0.3, 0.4, 0.4, 0.3, 0.3],
+    'tel aviv': [0.3, 0.3, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.3, 0.3],
+    'amman': [0.2, 0.2, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.2, 0.2],
+    'marrakesh': [0.3, 0.3, 0.4, 0.4, 0.4, 0.3, 0.3, 0.3, 0.4, 0.4, 0.4, 0.4],
+    'cape town': [0.3, 0.3, 0.3, 0.3, 0.2, 0.2, 0.2, 0.2, 0.3, 0.3, 0.4, 0.4],
+    'johannesburg': [0.3, 0.3, 0.3, 0.3, 0.2, 0.2, 0.2, 0.2, 0.3, 0.3, 0.3, 0.3],
+    'nairobi': [0.2, 0.2, 0.2, 0.1, 0.1, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2],
+    'lagos': [0.2, 0.2, 0.2, 0.2, 0.1, 0.1, 0.1, 0.1, 0.1, 0.2, 0.2, 0.2],
+    'toronto': [0.7, 0.6, 0.7, 0.8, 0.9, 1.1, 1.3, 1.2, 1.0, 0.9, 0.7, 0.8],
+    'vancouver': [0.4, 0.4, 0.5, 0.6, 0.7, 0.9, 1.1, 1.1, 0.8, 0.6, 0.5, 0.5],
+    'montreal': [0.3, 0.3, 0.4, 0.5, 0.6, 0.8, 1.0, 1.0, 0.7, 0.6, 0.4, 0.4],
+    'los angeles': [1.3, 1.2, 1.4, 1.4, 1.5, 1.6, 1.8, 1.8, 1.5, 1.4, 1.3, 1.5],
+    'san francisco': [1.0, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.4, 1.2, 1.1, 1.0, 1.1],
+    'las vegas': [3.0, 2.8, 3.2, 3.1, 3.0, 3.1, 3.0, 2.9, 2.8, 3.0, 3.1, 3.3],
+    'chicago': [0.7, 0.6, 0.8, 0.9, 1.1, 1.3, 1.5, 1.4, 1.2, 1.0, 0.8, 0.9],
+    'miami': [1.5, 1.4, 1.4, 1.2, 1.0, 1.0, 1.1, 1.0, 0.9, 1.0, 1.2, 1.5],
+    'orlando': [1.8, 1.7, 2.0, 1.9, 1.7, 1.9, 2.0, 1.8, 1.5, 1.6, 1.8, 2.1],
+    'washington': [0.8, 0.8, 1.1, 1.4, 1.3, 1.2, 1.3, 1.2, 1.0, 1.0, 0.9, 0.9],
+    'boston': [0.5, 0.5, 0.6, 0.7, 0.9, 1.0, 1.1, 1.1, 0.9, 0.9, 0.6, 0.6],
+    'seattle': [0.4, 0.4, 0.5, 0.6, 0.7, 0.9, 1.1, 1.1, 0.9, 0.6, 0.5, 0.5],
+    'honolulu': [0.8, 0.7, 0.8, 0.7, 0.7, 0.8, 0.9, 0.9, 0.7, 0.7, 0.7, 0.9],
+    'buenos aires': [1.0, 0.9, 0.8, 0.6, 0.5, 0.5, 0.6, 0.6, 0.6, 0.7, 0.8, 0.9],
+    'rio de janeiro': [1.0, 0.9, 0.7, 0.6, 0.5, 0.5, 0.6, 0.5, 0.5, 0.6, 0.7, 1.1],
+    'sao paulo': [0.6, 0.5, 0.5, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.5, 0.6],
+    'santiago': [0.4, 0.4, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.4, 0.4, 0.4],
+    'bogota': [0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.4],
+    'lima': [0.3, 0.3, 0.3, 0.3, 0.2, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.4],
+    'havana': [0.4, 0.4, 0.3, 0.2, 0.1, 0.1, 0.2, 0.2, 0.1, 0.2, 0.3, 0.4],
+    'cancun': [1.4, 1.3, 1.5, 1.2, 1.0, 0.9, 1.1, 1.0, 0.7, 0.8, 1.1, 1.5],
+    'melbourne': [0.9, 0.8, 0.7, 0.6, 0.5, 0.5, 0.6, 0.6, 0.7, 0.8, 0.9, 1.1],
+    'auckland': [0.5, 0.4, 0.4, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.4, 0.4, 0.5],
+    'queenstown': [0.3, 0.2, 0.2, 0.2, 0.2, 0.3, 0.3, 0.3, 0.2, 0.2, 0.2, 0.3],
+    'bangalore': [0.3, 0.3, 0.3, 0.3, 0.2, 0.2, 0.2, 0.2, 0.3, 0.3, 0.3, 0.3],
+    'agra': [0.4, 0.3, 0.3, 0.2, 0.1, 0.1, 0.1, 0.1, 0.2, 0.3, 0.4, 0.4],
+    'phuket': [1.0, 0.9, 0.8, 0.6, 0.5, 0.5, 0.5, 0.6, 0.5, 0.6, 0.8, 1.1],
+    'chiang mai': [0.6, 0.5, 0.4, 0.4, 0.3, 0.3, 0.3, 0.3, 0.3, 0.4, 0.5, 0.6],
+    'siem reap': [0.3, 0.3, 0.2, 0.2, 0.1, 0.1, 0.1, 0.2, 0.2, 0.2, 0.3, 0.3]
+};
+
+
+function getTouristFlowHtml(cityNameForWiki) {
+    const key = (cityNameForWiki || '').trim().toLowerCase();
+    const data = touristFlowData[key];
+    if (!data) return '';
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const width = 900;
+    const height = 320;
+    const paddingX = 50;
+    const paddingY = 50;
+    const max = Math.max(...data);
+    const min = Math.min(...data);
+    const range = (max - min) || 1;
+    const stepX = (width - paddingX * 2) / (data.length - 1);
+    const points = data.map((v, i) => {
+        const x = paddingX + i * stepX;
+        const y = height - paddingY - ((v - min) / range) * (height - paddingY * 2);
+        return { x, y, v };
+    });
+    const polylinePoints = points.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+    // Label every point now that the chart is much larger and more readable
+    const labelMarkup = points.map((p, i) => {
+        return `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="5" fill="#36d1c4" />
+            <text x="${p.x.toFixed(1)}" y="${(p.y - 16).toFixed(1)}" text-anchor="middle" class="tourist-flow-point-label">${p.v.toFixed(1)}M</text>`;
+    }).join('');
+    const monthLabels = months.map((m, i) => {
+        const x = paddingX + i * stepX;
+        return `<text x="${x.toFixed(1)}" y="${height - 10}" text-anchor="middle" class="tourist-flow-month-label">${m}</text>`;
+    }).join('');
+    return `<div class="tourist-flow-panel">
+        <div class="tourist-flow-title">MONTHLY TOURIST FLOW</div>
+        <svg class="tourist-flow-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet">
+            <polyline points="${polylinePoints}" fill="none" stroke="#36d1c4" stroke-width="3.5" />
+            ${labelMarkup}
+            ${monthLabels}
+        </svg>
+    </div>`;
+}
+
+// --- Average seasonal temperatures (computed from the previous year's archive data) ---
+async function getSeasonalTemperaturesHtml(lat, lon) {
+    try {
+        const now = new Date();
+        const year = now.getFullYear() - 1;
+        const startDate = `${year}-01-01`;
+        const endDate = `${year}-12-31`;
+        const archiveData = await cachedFetchJson(`https://archive-api.open-meteo.com/v1/archive?latitude=${lat}&longitude=${lon}&start_date=${startDate}&end_date=${endDate}&daily=temperature_2m_mean&timezone=auto`);
+        if (!archiveData.daily || !archiveData.daily.time || !archiveData.daily.temperature_2m_mean) return '';
+
+        const isNorthern = lat >= 0;
+        const seasonMonths = isNorthern
+            ? { spring: [3, 4, 5], summer: [6, 7, 8], autumn: [9, 10, 11], winter: [12, 1, 2] }
+            : { spring: [9, 10, 11], summer: [12, 1, 2], autumn: [3, 4, 5], winter: [6, 7, 8] };
+
+        const sums = { spring: 0, summer: 0, autumn: 0, winter: 0 };
+        const counts = { spring: 0, summer: 0, autumn: 0, winter: 0 };
+
+        archiveData.daily.time.forEach((dateStr, idx) => {
+            const temp = archiveData.daily.temperature_2m_mean[idx];
+            if (temp === null || temp === undefined) return;
+            const month = parseInt(dateStr.slice(5, 7), 10);
+            for (const season of Object.keys(seasonMonths)) {
+                if (seasonMonths[season].includes(month)) {
+                    sums[season] += temp;
+                    counts[season]++;
+                    break;
+                }
+            }
+        });
+
+        const avg = (season) => counts[season] > 0 ? Math.round(sums[season] / counts[season]) : null;
+        const springAvg = avg('spring');
+        const summerAvg = avg('summer');
+        const autumnAvg = avg('autumn');
+        const winterAvg = avg('winter');
+        if ([springAvg, summerAvg, autumnAvg, winterAvg].every(v => v === null)) return '';
+
+        return `<div class="seasonal-temps-panel">
+            <div class="seasonal-temps-title">AVERAGE SEASONAL TEMPERATURES</div>
+            <div class="seasonal-temps-grid">
+                <div class="seasonal-temp-item">
+                    <div class="seasonal-temp-icon">🌸</div>
+                    <div class="seasonal-temp-label">Spring: ${springAvg !== null ? springAvg + '°C' : '-'}</div>
+                </div>
+                <div class="seasonal-temp-item">
+                    <div class="seasonal-temp-icon">☀️</div>
+                    <div class="seasonal-temp-label">Summer: ${summerAvg !== null ? summerAvg + '°C' : '-'}</div>
+                </div>
+                <div class="seasonal-temp-item">
+                    <div class="seasonal-temp-icon">🍁</div>
+                    <div class="seasonal-temp-label">Autumn: ${autumnAvg !== null ? autumnAvg + '°C' : '-'}</div>
+                </div>
+                <div class="seasonal-temp-item">
+                    <div class="seasonal-temp-icon">❄️</div>
+                    <div class="seasonal-temp-label">Winter: ${winterAvg !== null ? winterAvg + '°C' : '-'}</div>
+                </div>
+            </div>
+        </div>`;
+    } catch (e) {
+        return '';
+    }
+}
 
 // --- Main weather lookup / render ---
 async function getWeather(isRelang, explicitCoords) {
@@ -139,6 +459,7 @@ async function getWeather(isRelang, explicitCoords) {
             <div class="city-header">
                 <strong class="city-header-name">${displayName.split(',')[0]}</strong>
                 <span class="city-header-country">${country}</span>
+                <span id="cityFavouriteStarSlot"></span>
             </div>`;
 
         let dailyForecastHtml = '<div class="daily-sidebar-title">7-DAY FORECAST</div><div class="daily-sidebar-list">';
@@ -282,22 +603,42 @@ async function getWeather(isRelang, explicitCoords) {
         if (cityDescription) {
             cityInfoHtml += `<div class="city-description">${cityDescription}</div>`;
         }
+        const touristFlowHtml = getTouristFlowHtml(cityNameForWiki);
+        if (touristFlowHtml) {
+            cityInfoHtml += touristFlowHtml;
+        }
         cityInfoHtml += '</div>';
         cityInfoHtml += `<div id="forecastContainer"></div>`;
 
         const mapHtml = `<div class="city-map-wrap" id="cityMapWrap">
-            <iframe class="city-map" loading="lazy" title="${displayName.split(',')[0]}"
-                src="https://www.openstreetmap.org/export/embed.html?layer=mapnik&marker=${lat}%2C${lon}&zoom=12&mlat=${lat}&mlon=${lon}"></iframe>
+            <div class="city-map-clip">
+                <iframe class="city-map" loading="lazy" title="${displayName.split(',')[0]}"
+                    src="https://www.openstreetmap.org/export/embed.html?layer=mapnik&marker=${lat}%2C${lon}&zoom=12&mlat=${lat}&mlon=${lon}"></iframe>
+            </div>
         </div>`;
+
+        const seasonalTempsPlaceholder = `<div id="seasonalTempsSlot"></div>`;
 
         const fullLayoutHtml = `<div class="city-detail-layout">
             <div class="city-detail-main">${cityInfoHtml}</div>
             <div class="city-detail-sidebar">
                 <div class="daily-sidebar">${dailyForecastHtml}</div>
                 ${mapHtml}
+                ${seasonalTempsPlaceholder}
             </div>
         </div>`;
         resultDiv.innerHTML = fullLayoutHtml;
+
+        getSeasonalTemperaturesHtml(lat, lon).then(html => {
+            const slot = document.getElementById('seasonalTempsSlot');
+            if (slot) slot.innerHTML = html;
+        });
+
+        const favouriteStarSlot = document.getElementById('cityFavouriteStarSlot');
+        if (favouriteStarSlot) {
+            const favouriteCity = { name: displayName.split(',')[0], country, lat, lon };
+            favouriteStarSlot.appendChild(createFavouriteStar(favouriteCity));
+        }
 
         function showCityMain() {
             currentView = 'main';
@@ -307,12 +648,16 @@ async function getWeather(isRelang, explicitCoords) {
             if (mapWrap) mapWrap.style.display = '';
             const sidebar = document.querySelector('.daily-sidebar');
             if (sidebar) sidebar.style.display = '';
+            const seasonalSlot = document.getElementById('seasonalTempsSlot');
+            if (seasonalSlot) seasonalSlot.style.display = '';
         }
         function showBackButton(onClick) {
             const mapWrap = document.getElementById('cityMapWrap');
             if (mapWrap) mapWrap.style.display = 'none';
             const sidebar = document.querySelector('.daily-sidebar');
             if (sidebar) sidebar.style.display = 'none';
+            const seasonalSlot = document.getElementById('seasonalTempsSlot');
+            if (seasonalSlot) seasonalSlot.style.display = 'none';
             let fc = document.getElementById('forecastContainer');
             let headerBar = document.createElement('div');
             headerBar.style = 'display:flex;align-items:center;position:relative;margin-bottom:14px;min-height:40px;';
@@ -330,7 +675,7 @@ async function getWeather(isRelang, explicitCoords) {
         async function renderHourlyForecast() {
             currentView = 'hourly';
             document.querySelector('.city-info-panel').style.display = 'none';
-            let hourlyHtml = `<b>${TEXT.hourly} (${TEXT.hours48}):</b><br>`;
+            let hourlyHtml = `<b>${TEXT.hourly}:</b><br>`;
             let lastDate = '';
             hourlyHtml += '<div class="hourly-grid">';
             const now = new Date();
@@ -465,6 +810,82 @@ function getMeteoCondition(code) {
 }
 
 
+// --- Shared helpers for rendering a grid of city weather cards ---
+function delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function fetchCityWeatherCardHtml(c, attempt) {
+    try {
+        const meteoData = await cachedFetchJson(`https://api.open-meteo.com/v1/forecast?latitude=${c.lat}&longitude=${c.lon}&current_weather=true&lang=en`);
+        if (!meteoData.current_weather) throw new Error('no current_weather');
+        const temp = Math.round(meteoData.current_weather.temperature);
+        const code = meteoData.current_weather.weathercode;
+        const icon = getMeteoIcon(code, meteoData.current_weather.is_day);
+        const windSpeed = meteoData.current_weather.windspeed;
+        const windDir = meteoData.current_weather.winddirection;
+        const windDirText = windDirectionText(windDir);
+        return `<div class="capital-card" data-city="${c.name}" data-country="${c.country || ''}" data-lat="${c.lat}" data-lon="${c.lon}">
+            <div class="city">${c.name}${c.country ? ', ' + c.country : ''}</div>
+            <div class="temp">${icon} ${temp}°C</div>
+            <div class="desc">${windSpeed} km/h, Wind (${windDirText})</div>
+        </div>`;
+    } catch (e) {
+        // Retry up to 3 times with a short backoff delay, since
+        // firing requests for many cities at once can occasionally
+        // trigger temporary rate limiting / network hiccups.
+        if (attempt < 3) {
+            await delay(300 * (attempt + 1));
+            return fetchCityWeatherCardHtml(c, attempt + 1);
+        }
+        return '';
+    }
+}
+
+function attachCardInteractions(grid) {
+    Array.from(grid.querySelectorAll('.capital-card')).forEach(card => {
+        const cityName = card.getAttribute('data-city');
+        const country = card.getAttribute('data-country') || '';
+        const cardLat = parseFloat(card.getAttribute('data-lat'));
+        const cardLon = parseFloat(card.getAttribute('data-lon'));
+        card.style.cursor = 'pointer';
+        const star = createFavouriteStar({ name: cityName, country, lat: cardLat, lon: cardLon }, () => {
+            if (typeof window.__refreshFavouritesSection === 'function') {
+                window.__refreshFavouritesSection();
+            }
+        });
+        card.appendChild(star);
+        card.addEventListener('click', async function() {
+            document.getElementById('cityInput').value = cityName;
+            showSearch();
+            await getWeather(false, { lat: cardLat, lon: cardLon });
+            pushCityState(cityName, cardLat, cardLon);
+        });
+    });
+}
+
+// --- HOME PAGE: favourites section ---
+async function showFavouritesWeather() {
+    const section = document.getElementById('favouritesSection');
+    const grid = document.getElementById('favouritesWeather');
+    if (!section || !grid) return;
+    const favourites = getFavourites();
+    if (favourites.length === 0) {
+        section.style.display = 'none';
+        grid.innerHTML = '';
+        return;
+    }
+    section.style.display = '';
+    const promises = favourites.map((c, idx) =>
+        delay(idx * 80).then(() => fetchCityWeatherCardHtml(c, 0))
+    );
+    const results = await Promise.all(promises);
+    const successfulResults = results.filter(r => r);
+    grid.innerHTML = successfulResults.join('');
+    attachCardInteractions(grid);
+}
+window.__refreshFavouritesSection = showFavouritesWeather;
+
 // --- HOME PAGE: static list of 10 major cities ---
 async function showCapitalsWeather() {
     const grid = document.getElementById('capitalsWeather');
@@ -474,41 +895,12 @@ async function showCapitalsWeather() {
         subtitleEl.textContent = TEXT.subtitle;
     }
     grid.innerHTML = TEXT.loading;
+    showFavouritesWeather();
 
-    function delay(ms) {
-        return new Promise(resolve => setTimeout(resolve, ms));
-    }
-
-    async function fetchCityWeather(c, attempt) {
-        try {
-            const meteoData = await cachedFetchJson(`https://api.open-meteo.com/v1/forecast?latitude=${c.lat}&longitude=${c.lon}&current_weather=true&lang=en`);
-            if (!meteoData.current_weather) throw new Error('no current_weather');
-            const temp = Math.round(meteoData.current_weather.temperature);
-            const code = meteoData.current_weather.weathercode;
-            const icon = getMeteoIcon(code, meteoData.current_weather.is_day);
-            const windSpeed = meteoData.current_weather.windspeed;
-            const windDir = meteoData.current_weather.winddirection;
-            const windDirText = windDirectionText(windDir);
-            return `<div class="capital-card" data-city="${c.name}" data-lat="${c.lat}" data-lon="${c.lon}">
-                <div class="city">${c.name}, ${c.country}</div>
-                <div class="temp">${icon} ${temp}°C</div>
-                <div class="desc">${windSpeed} km/h, Wind (${windDirText})</div>
-            </div>`;
-        } catch (e) {
-            // Retry up to 3 times with a short backoff delay, since
-            // firing requests for all 10 cities at once can occasionally
-            // trigger temporary rate limiting / network hiccups.
-            if (attempt < 3) {
-                await delay(300 * (attempt + 1));
-                return fetchCityWeather(c, attempt + 1);
-            }
-            return '';
-        }
-    }
     // Stagger the initial requests slightly instead of firing all 10 at
     // once, to reduce the chance of hitting a rate limit in the first place.
     const promises = worldCities.map((c, idx) =>
-        delay(idx * 80).then(() => fetchCityWeather(c, 0))
+        delay(idx * 80).then(() => fetchCityWeatherCardHtml(c, 0))
     );
     const results = await Promise.all(promises);
     const successfulResults = results.filter(r => r);
@@ -517,18 +909,7 @@ async function showCapitalsWeather() {
         return;
     }
     grid.innerHTML = successfulResults.join('');
-    Array.from(grid.querySelectorAll('.capital-card')).forEach(card => {
-        card.style.cursor = 'pointer';
-        card.addEventListener('click', async function() {
-            const cityName = card.getAttribute('data-city');
-            const cardLat = parseFloat(card.getAttribute('data-lat'));
-            const cardLon = parseFloat(card.getAttribute('data-lon'));
-            document.getElementById('cityInput').value = cityName;
-            showSearch();
-            await getWeather(false, { lat: cardLat, lon: cardLon });
-            pushCityState(cityName, cardLat, cardLon);
-        });
-    });
+    attachCardInteractions(grid);
 }
 
 // Show home / search sections
@@ -565,6 +946,7 @@ window.addEventListener('popstate', async (e) => {
         ? { lat: state.lat, lon: state.lon }
         : null;
     if (!state || state.view === 'home') {
+        document.getElementById('cityInput').value = '';
         showHome();
         showCapitalsWeather();
     } else if (state.view === 'city') {
@@ -613,6 +995,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     }
     document.getElementById('logo').onclick = (e) => {
         e.preventDefault();
+        document.getElementById('cityInput').value = '';
         showHome();
         pushHomeState();
         showCapitalsWeather();
