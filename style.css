@@ -334,6 +334,38 @@ button:hover {
     color: var(--aw-text-muted);
 }
 
+.capital-card {
+    position: relative;
+}
+.favourite-star {
+    position: absolute;
+    top: 12px;
+    right: 14px;
+    font-size: 1.3em;
+    cursor: pointer;
+    color: var(--aw-text-muted);
+    opacity: 0.6;
+    transition: color 0.2s, opacity 0.2s, transform 0.2s;
+    line-height: 1;
+    user-select: none;
+    z-index: 2;
+}
+.favourite-star:hover {
+    transform: scale(1.15);
+    opacity: 1;
+}
+.favourite-star.active {
+    color: var(--aw-orange);
+    opacity: 1;
+}
+
+.city-detail-main .favourite-star {
+    position: static;
+    font-size: 1.6em;
+    margin-left: 10px;
+}
+
+
 .subtitle {
     color: var(--aw-text-muted);
     font-size: 1.3em;
@@ -375,6 +407,13 @@ button:hover {
     flex-direction: column;
     align-items: center;
     margin-bottom: 4px;
+    position: relative;
+    width: 100%;
+}
+.city-header .favourite-star {
+    position: absolute;
+    top: 0;
+    right: 0;
 }
 .city-header-name {
     font-size: 1.8em;

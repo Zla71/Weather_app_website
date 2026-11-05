@@ -30,6 +30,71 @@ let lastSearchedCity = '';
 let lastSearchedCoords = null; // { lat, lon } | null
 let currentView = 'main'; // 'main' | 'daily' | 'hourly'
 
+// --- Favourites (persisted in localStorage) ---
+const FAVOURITES_KEY = 'weatherAppFavourites';
+
+function getFavourites() {
+    try {
+        const raw = localStorage.getItem(FAVOURITES_KEY);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+        return [];
+    }
+}
+
+function saveFavourites(favourites) {
+    try {
+        localStorage.setItem(FAVOURITES_KEY, JSON.stringify(favourites));
+    } catch (e) { /* ignore storage errors */ }
+}
+
+function makeFavouriteKey(name, country) {
+    return `${(name || '').trim().toLowerCase()}|${(country || '').trim().toLowerCase()}`;
+}
+
+function isFavouriteCity(name, country) {
+    const key = makeFavouriteKey(name, country);
+    return getFavourites().some(f => makeFavouriteKey(f.name, f.country) === key);
+}
+
+function toggleFavouriteCity(city) {
+    const favourites = getFavourites();
+    const key = makeFavouriteKey(city.name, city.country);
+    const idx = favourites.findIndex(f => makeFavouriteKey(f.name, f.country) === key);
+    if (idx !== -1) {
+        favourites.splice(idx, 1);
+    } else {
+        favourites.push(city);
+    }
+    saveFavourites(favourites);
+    return idx === -1; // true if it was just added
+}
+
+function createFavouriteStar(city, onToggle) {
+    const star = document.createElement('span');
+    star.className = 'favourite-star';
+    star.textContent = '★';
+    star.title = 'Add to favourites';
+    const refreshState = () => {
+        const active = isFavouriteCity(city.name, city.country);
+        star.classList.toggle('active', active);
+        star.title = active ? 'Remove from favourites' : 'Add to favourites';
+    };
+    refreshState();
+    star.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleFavouriteCity(city);
+        refreshState();
+        if (typeof onToggle === 'function') onToggle();
+        if (typeof window.__refreshFavouritesSection === 'function') {
+            window.__refreshFavouritesSection();
+        }
+    });
+    return star;
+}
+
 function windDirectionText(deg) {
     if (deg === undefined || deg === null || deg === '-' || isNaN(deg)) return '-';
     const dirs = TEXT.windDirs;
@@ -139,6 +204,7 @@ async function getWeather(isRelang, explicitCoords) {
             <div class="city-header">
                 <strong class="city-header-name">${displayName.split(',')[0]}</strong>
                 <span class="city-header-country">${country}</span>
+                <span id="cityFavouriteStarSlot"></span>
             </div>`;
 
         let dailyForecastHtml = '<div class="daily-sidebar-title">7-DAY FORECAST</div><div class="daily-sidebar-list">';
@@ -298,6 +364,12 @@ async function getWeather(isRelang, explicitCoords) {
             </div>
         </div>`;
         resultDiv.innerHTML = fullLayoutHtml;
+
+        const favouriteStarSlot = document.getElementById('cityFavouriteStarSlot');
+        if (favouriteStarSlot) {
+            const favouriteCity = { name: displayName.split(',')[0], country, lat, lon };
+            favouriteStarSlot.appendChild(createFavouriteStar(favouriteCity));
+        }
 
         function showCityMain() {
             currentView = 'main';
@@ -465,6 +537,82 @@ function getMeteoCondition(code) {
 }
 
 
+// --- Shared helpers for rendering a grid of city weather cards ---
+function delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function fetchCityWeatherCardHtml(c, attempt) {
+    try {
+        const meteoData = await cachedFetchJson(`https://api.open-meteo.com/v1/forecast?latitude=${c.lat}&longitude=${c.lon}&current_weather=true&lang=en`);
+        if (!meteoData.current_weather) throw new Error('no current_weather');
+        const temp = Math.round(meteoData.current_weather.temperature);
+        const code = meteoData.current_weather.weathercode;
+        const icon = getMeteoIcon(code, meteoData.current_weather.is_day);
+        const windSpeed = meteoData.current_weather.windspeed;
+        const windDir = meteoData.current_weather.winddirection;
+        const windDirText = windDirectionText(windDir);
+        return `<div class="capital-card" data-city="${c.name}" data-country="${c.country || ''}" data-lat="${c.lat}" data-lon="${c.lon}">
+            <div class="city">${c.name}${c.country ? ', ' + c.country : ''}</div>
+            <div class="temp">${icon} ${temp}°C</div>
+            <div class="desc">${windSpeed} km/h, Wind (${windDirText})</div>
+        </div>`;
+    } catch (e) {
+        // Retry up to 3 times with a short backoff delay, since
+        // firing requests for many cities at once can occasionally
+        // trigger temporary rate limiting / network hiccups.
+        if (attempt < 3) {
+            await delay(300 * (attempt + 1));
+            return fetchCityWeatherCardHtml(c, attempt + 1);
+        }
+        return '';
+    }
+}
+
+function attachCardInteractions(grid) {
+    Array.from(grid.querySelectorAll('.capital-card')).forEach(card => {
+        const cityName = card.getAttribute('data-city');
+        const country = card.getAttribute('data-country') || '';
+        const cardLat = parseFloat(card.getAttribute('data-lat'));
+        const cardLon = parseFloat(card.getAttribute('data-lon'));
+        card.style.cursor = 'pointer';
+        const star = createFavouriteStar({ name: cityName, country, lat: cardLat, lon: cardLon }, () => {
+            if (typeof window.__refreshFavouritesSection === 'function') {
+                window.__refreshFavouritesSection();
+            }
+        });
+        card.appendChild(star);
+        card.addEventListener('click', async function() {
+            document.getElementById('cityInput').value = cityName;
+            showSearch();
+            await getWeather(false, { lat: cardLat, lon: cardLon });
+            pushCityState(cityName, cardLat, cardLon);
+        });
+    });
+}
+
+// --- HOME PAGE: favourites section ---
+async function showFavouritesWeather() {
+    const section = document.getElementById('favouritesSection');
+    const grid = document.getElementById('favouritesWeather');
+    if (!section || !grid) return;
+    const favourites = getFavourites();
+    if (favourites.length === 0) {
+        section.style.display = 'none';
+        grid.innerHTML = '';
+        return;
+    }
+    section.style.display = '';
+    const promises = favourites.map((c, idx) =>
+        delay(idx * 80).then(() => fetchCityWeatherCardHtml(c, 0))
+    );
+    const results = await Promise.all(promises);
+    const successfulResults = results.filter(r => r);
+    grid.innerHTML = successfulResults.join('');
+    attachCardInteractions(grid);
+}
+window.__refreshFavouritesSection = showFavouritesWeather;
+
 // --- HOME PAGE: static list of 10 major cities ---
 async function showCapitalsWeather() {
     const grid = document.getElementById('capitalsWeather');
@@ -474,41 +622,12 @@ async function showCapitalsWeather() {
         subtitleEl.textContent = TEXT.subtitle;
     }
     grid.innerHTML = TEXT.loading;
+    showFavouritesWeather();
 
-    function delay(ms) {
-        return new Promise(resolve => setTimeout(resolve, ms));
-    }
-
-    async function fetchCityWeather(c, attempt) {
-        try {
-            const meteoData = await cachedFetchJson(`https://api.open-meteo.com/v1/forecast?latitude=${c.lat}&longitude=${c.lon}&current_weather=true&lang=en`);
-            if (!meteoData.current_weather) throw new Error('no current_weather');
-            const temp = Math.round(meteoData.current_weather.temperature);
-            const code = meteoData.current_weather.weathercode;
-            const icon = getMeteoIcon(code, meteoData.current_weather.is_day);
-            const windSpeed = meteoData.current_weather.windspeed;
-            const windDir = meteoData.current_weather.winddirection;
-            const windDirText = windDirectionText(windDir);
-            return `<div class="capital-card" data-city="${c.name}" data-lat="${c.lat}" data-lon="${c.lon}">
-                <div class="city">${c.name}, ${c.country}</div>
-                <div class="temp">${icon} ${temp}°C</div>
-                <div class="desc">${windSpeed} km/h, Wind (${windDirText})</div>
-            </div>`;
-        } catch (e) {
-            // Retry up to 3 times with a short backoff delay, since
-            // firing requests for all 10 cities at once can occasionally
-            // trigger temporary rate limiting / network hiccups.
-            if (attempt < 3) {
-                await delay(300 * (attempt + 1));
-                return fetchCityWeather(c, attempt + 1);
-            }
-            return '';
-        }
-    }
     // Stagger the initial requests slightly instead of firing all 10 at
     // once, to reduce the chance of hitting a rate limit in the first place.
     const promises = worldCities.map((c, idx) =>
-        delay(idx * 80).then(() => fetchCityWeather(c, 0))
+        delay(idx * 80).then(() => fetchCityWeatherCardHtml(c, 0))
     );
     const results = await Promise.all(promises);
     const successfulResults = results.filter(r => r);
@@ -517,18 +636,7 @@ async function showCapitalsWeather() {
         return;
     }
     grid.innerHTML = successfulResults.join('');
-    Array.from(grid.querySelectorAll('.capital-card')).forEach(card => {
-        card.style.cursor = 'pointer';
-        card.addEventListener('click', async function() {
-            const cityName = card.getAttribute('data-city');
-            const cardLat = parseFloat(card.getAttribute('data-lat'));
-            const cardLon = parseFloat(card.getAttribute('data-lon'));
-            document.getElementById('cityInput').value = cityName;
-            showSearch();
-            await getWeather(false, { lat: cardLat, lon: cardLon });
-            pushCityState(cityName, cardLat, cardLon);
-        });
-    });
+    attachCardInteractions(grid);
 }
 
 // Show home / search sections
@@ -565,6 +673,7 @@ window.addEventListener('popstate', async (e) => {
         ? { lat: state.lat, lon: state.lon }
         : null;
     if (!state || state.view === 'home') {
+        document.getElementById('cityInput').value = '';
         showHome();
         showCapitalsWeather();
     } else if (state.view === 'city') {
@@ -613,6 +722,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     }
     document.getElementById('logo').onclick = (e) => {
         e.preventDefault();
+        document.getElementById('cityInput').value = '';
         showHome();
         pushHomeState();
         showCapitalsWeather();
