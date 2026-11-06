@@ -1,10 +1,12 @@
-// --- English-only Weather App (no geolocation, static city list) ---
+// --- English-only Weather App ---
+// Home shows the user's location when it is shared, otherwise a static city list.
 
 const TEXT = {
     title: 'Weather Forecast',
     searchPlaceholder: 'Enter city',
     searchBtn: 'Search',
     subtitle: 'Weather in some of the largest cities',
+    locationTitle: 'Weather at your location',
     now: 'Now',
     wind: 'Wind',
     windUnit: 'km/h',
@@ -29,6 +31,10 @@ const TEXT = {
 let lastSearchedCity = '';
 let lastSearchedCoords = null; // { lat, lon } | null
 let currentView = 'main'; // 'main' | 'daily' | 'hourly'
+let homeContentToken = 0;
+let cachedUserCoords = undefined; // undefined = not resolved yet, null = unavailable
+
+const OPEN_CAGE_API_KEY = 'e6c4ae76e7b84e66a3ebd42e00ed99b5';
 
 // --- Favourites (persisted in localStorage) ---
 const FAVOURITES_KEY = 'weatherAppFavourites';
@@ -400,18 +406,17 @@ async function getWeather(isRelang, explicitCoords) {
     if (!isRelang) currentView = 'main';
     resultDiv.textContent = TEXT.loading;
     try {
-        const openCageApiKey = 'e6c4ae76e7b84e66a3ebd42e00ed99b5';
         let lat, lon, geoData;
         if (coordsToUse) {
             lat = coordsToUse.lat;
             lon = coordsToUse.lon;
-            geoData = await cachedFetchJson(`https://api.opencagedata.com/geocode/v1/json?q=${lat}+${lon}&key=${openCageApiKey}&language=en&limit=1`);
+            geoData = await cachedFetchJson(`https://api.opencagedata.com/geocode/v1/json?q=${lat}+${lon}&key=${OPEN_CAGE_API_KEY}&language=en&limit=1`);
             if (!geoData.results || !geoData.results.length) {
                 resultDiv.textContent = TEXT.notFound;
                 return;
             }
         } else {
-            geoData = await cachedFetchJson(`https://api.opencagedata.com/geocode/v1/json?q=${encodeURIComponent(city)}&key=${openCageApiKey}&language=en&limit=1`);
+            geoData = await cachedFetchJson(`https://api.opencagedata.com/geocode/v1/json?q=${encodeURIComponent(city)}&key=${OPEN_CAGE_API_KEY}&language=en&limit=1`);
             if (!geoData.results || !geoData.results.length) {
                 resultDiv.textContent = TEXT.notFound;
                 return;
@@ -426,7 +431,12 @@ async function getWeather(isRelang, explicitCoords) {
         let cityNameForWiki = city || displayName.split(',')[0];
 
         const comp = geoData.results[0].components;
-        cityNameForWiki = comp.city || comp.town || comp.village || comp.municipality || cityNameForWiki;
+        // A point inside Beijing or Tokyo reverse-geocodes to a district or ward
+        // (Dongcheng District, Suginami). Keep the city the user selected so the
+        // header, Wikipedia summary, and tourist-flow chart stay on that city.
+        if (!(coordsToUse && city)) {
+            cityNameForWiki = comp.city || comp.town || comp.village || comp.municipality || cityNameForWiki;
+        }
         displayName = cityNameForWiki;
 
         // Wikipedia summary + image (best effort)
@@ -815,7 +825,12 @@ function delay(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-async function fetchCityWeatherCardHtml(c, attempt) {
+async function fetchCityWeatherCardHtml(c, attempt, options) {
+    const multiline = !!(options && options.multiline);
+    const extraClass = options && options.extraClass ? ` ${options.extraClass}` : '';
+    const cityLabel = c.country
+        ? (multiline ? `${c.name},<br>${c.country}` : `${c.name}, ${c.country}`)
+        : c.name;
     try {
         const meteoData = await cachedFetchJson(`https://api.open-meteo.com/v1/forecast?latitude=${c.lat}&longitude=${c.lon}&current_weather=true&lang=en`);
         if (!meteoData.current_weather) throw new Error('no current_weather');
@@ -825,8 +840,8 @@ async function fetchCityWeatherCardHtml(c, attempt) {
         const windSpeed = meteoData.current_weather.windspeed;
         const windDir = meteoData.current_weather.winddirection;
         const windDirText = windDirectionText(windDir);
-        return `<div class="capital-card" data-city="${c.name}" data-country="${c.country || ''}" data-lat="${c.lat}" data-lon="${c.lon}">
-            <div class="city">${c.name}${c.country ? ', ' + c.country : ''}</div>
+        return `<div class="capital-card${extraClass}" data-city="${c.name}" data-country="${c.country || ''}" data-lat="${c.lat}" data-lon="${c.lon}">
+            <div class="city">${cityLabel}</div>
             <div class="temp">${icon} ${temp}°C</div>
             <div class="desc">${windSpeed} km/h, Wind (${windDirText})</div>
         </div>`;
@@ -836,7 +851,7 @@ async function fetchCityWeatherCardHtml(c, attempt) {
         // trigger temporary rate limiting / network hiccups.
         if (attempt < 3) {
             await delay(300 * (attempt + 1));
-            return fetchCityWeatherCardHtml(c, attempt + 1);
+            return fetchCityWeatherCardHtml(c, attempt + 1, options);
         }
         return '';
     }
@@ -886,16 +901,115 @@ async function showFavouritesWeather() {
 }
 window.__refreshFavouritesSection = showFavouritesWeather;
 
+function hideLocationSection() {
+    const section = document.getElementById('locationSection');
+    if (section) section.style.display = 'none';
+}
+
+function hideCapitalsSection() {
+    const subtitleEl = document.getElementById('capitalsSubtitle');
+    const grid = document.getElementById('capitalsWeather');
+    if (subtitleEl) subtitleEl.style.display = 'none';
+    if (grid) grid.style.display = 'none';
+}
+
+function isHomeVisible() {
+    const home = document.getElementById('homeSection');
+    return !!home && home.style.display !== 'none';
+}
+
+// Returns coords when the browser already has a shared location, otherwise null.
+// A denied or unanswered prompt resolves to null without blocking the city list.
+function requestUserLocation() {
+    if (cachedUserCoords !== undefined) return Promise.resolve(cachedUserCoords);
+    if (!navigator.geolocation) {
+        cachedUserCoords = null;
+        return Promise.resolve(null);
+    }
+    return new Promise((resolve) => {
+        let settled = false;
+        const finish = (coords) => {
+            if (settled) return;
+            settled = true;
+            if (coords) cachedUserCoords = coords;
+            resolve(coords);
+        };
+        const timer = setTimeout(() => finish(null), 10000);
+        navigator.geolocation.getCurrentPosition(
+            (pos) => {
+                clearTimeout(timer);
+                finish({ lat: pos.coords.latitude, lon: pos.coords.longitude });
+            },
+            () => {
+                clearTimeout(timer);
+                finish(null);
+            },
+            { enableHighAccuracy: false, timeout: 8000, maximumAge: 10 * 60 * 1000 }
+        );
+    });
+}
+
+async function getGeolocationPermission() {
+    try {
+        if (navigator.permissions && navigator.permissions.query) {
+            const status = await navigator.permissions.query({ name: 'geolocation' });
+            return status.state;
+        }
+    } catch (e) { /* Permissions API can reject the geolocation name */ }
+    return 'prompt';
+}
+
+async function resolveLocationCity(coords) {
+    const geoData = await cachedFetchJson(`https://api.opencagedata.com/geocode/v1/json?q=${coords.lat}+${coords.lon}&key=${OPEN_CAGE_API_KEY}&language=en&limit=1`);
+    if (!geoData.results || !geoData.results.length) throw new Error('not found');
+    const comp = geoData.results[0].components || {};
+    const name = comp.city || comp.town || comp.village || comp.municipality || comp.county || comp.state || 'Your location';
+    const country = comp.country || '';
+    return { name, country, lat: coords.lat, lon: coords.lon };
+}
+
+// Replaces the large-cities panel with a single card for the shared location.
+async function showLocationWeather(coords, token) {
+    const section = document.getElementById('locationSection');
+    const container = document.getElementById('locationWeather');
+    if (!section || !container) return false;
+    if (token !== homeContentToken || !isHomeVisible()) return false;
+    hideCapitalsSection();
+    section.style.display = '';
+    const subtitleEl = document.getElementById('locationSubtitle');
+    if (subtitleEl) subtitleEl.textContent = TEXT.locationTitle;
+    container.innerHTML = `<div class="location-loading">${TEXT.loading}</div>`;
+    try {
+        const city = await resolveLocationCity(coords);
+        if (token !== homeContentToken || !isHomeVisible()) return false;
+        const html = await fetchCityWeatherCardHtml(city, 0, { multiline: true, extraClass: 'location-card' });
+        if (token !== homeContentToken || !isHomeVisible()) return false;
+        if (!html) {
+            hideLocationSection();
+            return false;
+        }
+        container.innerHTML = html;
+        attachCardInteractions(container);
+        return true;
+    } catch (e) {
+        if (token === homeContentToken) hideLocationSection();
+        return false;
+    }
+}
+
 // --- HOME PAGE: static list of 10 major cities ---
-async function showCapitalsWeather() {
+async function showCapitalsWeather(token) {
     const grid = document.getElementById('capitalsWeather');
     const subtitleEl = document.getElementById('capitalsSubtitle');
+    if (!grid) return;
+    if (token !== homeContentToken) return;
+    hideLocationSection();
     if (subtitleEl) {
         subtitleEl.style.display = '';
         subtitleEl.textContent = TEXT.subtitle;
     }
+    grid.style.display = '';
     grid.innerHTML = TEXT.loading;
-    showFavouritesWeather();
 
     // Stagger the initial requests slightly instead of firing all 10 at
     // once, to reduce the chance of hitting a rate limit in the first place.
@@ -903,6 +1017,7 @@ async function showCapitalsWeather() {
         delay(idx * 80).then(() => fetchCityWeatherCardHtml(c, 0))
     );
     const results = await Promise.all(promises);
+    if (token !== homeContentToken || !isHomeVisible()) return;
     const successfulResults = results.filter(r => r);
     if (successfulResults.length === 0) {
         grid.innerHTML = '';
@@ -910,6 +1025,39 @@ async function showCapitalsWeather() {
     }
     grid.innerHTML = successfulResults.join('');
     attachCardInteractions(grid);
+}
+
+// Location panel when the browser has a shared position; city list otherwise.
+async function showHomeContent() {
+    const token = ++homeContentToken;
+    showFavouritesWeather();
+
+    const permission = await getGeolocationPermission();
+    if (token !== homeContentToken || !isHomeVisible()) return;
+
+    if (permission === 'granted') {
+        const coords = await requestUserLocation();
+        if (token !== homeContentToken || !isHomeVisible()) return;
+        if (coords) {
+            const shown = await showLocationWeather(coords, token);
+            if (token !== homeContentToken || !isHomeVisible()) return;
+            if (shown) return;
+        }
+        await showCapitalsWeather(token);
+        return;
+    }
+
+    if (permission === 'denied') {
+        await showCapitalsWeather(token);
+        return;
+    }
+
+    // Permission is still a prompt: keep the city list, then switch if the user shares location.
+    const capitalsPromise = showCapitalsWeather(token);
+    const coords = await requestUserLocation();
+    await capitalsPromise;
+    if (!coords || token !== homeContentToken || !isHomeVisible()) return;
+    await showLocationWeather(coords, token);
 }
 
 // Show home / search sections
@@ -948,7 +1096,7 @@ window.addEventListener('popstate', async (e) => {
     if (!state || state.view === 'home') {
         document.getElementById('cityInput').value = '';
         showHome();
-        showCapitalsWeather();
+        showHomeContent();
     } else if (state.view === 'city') {
         document.getElementById('cityInput').value = state.city;
         lastSearchedCity = state.city;
@@ -968,8 +1116,6 @@ window.addEventListener('popstate', async (e) => {
 // Navigation / init
 window.addEventListener('DOMContentLoaded', async () => {
     document.title = TEXT.title;
-    const logoEl = document.querySelector('.logo');
-    if (logoEl) logoEl.textContent = TEXT.title;
     document.getElementById('cityInput').placeholder = TEXT.searchPlaceholder;
     document.getElementById('searchBtn').textContent = TEXT.searchBtn;
 
@@ -991,14 +1137,14 @@ window.addEventListener('DOMContentLoaded', async () => {
     } else {
         replaceHomeState();
         showHome();
-        showCapitalsWeather();
+        showHomeContent();
     }
     document.getElementById('logo').onclick = (e) => {
         e.preventDefault();
         document.getElementById('cityInput').value = '';
         showHome();
         pushHomeState();
-        showCapitalsWeather();
+        showHomeContent();
     };
     const cityInput = document.getElementById('cityInput');
     const searchBtn = document.getElementById('searchBtn');
