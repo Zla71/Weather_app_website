@@ -426,7 +426,12 @@ async function getWeather(isRelang, explicitCoords) {
         let cityNameForWiki = city || displayName.split(',')[0];
 
         const comp = geoData.results[0].components;
-        cityNameForWiki = comp.city || comp.town || comp.village || comp.municipality || cityNameForWiki;
+        // A point inside Beijing or Tokyo reverse-geocodes to a district or ward
+        // (Dongcheng District, Suginami). Keep the city the user selected so the
+        // header, Wikipedia summary, and tourist-flow chart stay on that city.
+        if (!(coordsToUse && city)) {
+            cityNameForWiki = comp.city || comp.town || comp.village || comp.municipality || cityNameForWiki;
+        }
         displayName = cityNameForWiki;
 
         // Wikipedia summary + image (best effort)
