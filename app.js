@@ -968,8 +968,6 @@ window.addEventListener('popstate', async (e) => {
 // Navigation / init
 window.addEventListener('DOMContentLoaded', async () => {
     document.title = TEXT.title;
-    const logoEl = document.querySelector('.logo');
-    if (logoEl) logoEl.textContent = TEXT.title;
     document.getElementById('cityInput').placeholder = TEXT.searchPlaceholder;
     document.getElementById('searchBtn').textContent = TEXT.searchBtn;
 

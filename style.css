@@ -86,9 +86,12 @@ body {
     gap: 8px;
 }
 .logo::before {
-    content: "☀";
-    color: var(--aw-red);
-    font-size: 1.1em;
+    content: "";
+}
+.logo-img {
+    height: 1.8em;
+    width: auto;
+    display: block;
 }
 .logo:hover {
     color: var(--aw-orange);
