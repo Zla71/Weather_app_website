@@ -380,6 +380,44 @@ button:hover {
     font-weight: 600;
 }
 
+.location-weather {
+    display: flex;
+    justify-content: center;
+    margin: 28px auto 8px;
+    width: 100%;
+}
+.location-loading {
+    color: var(--aw-text-muted);
+    text-align: center;
+    margin-top: 24px;
+}
+.capital-card.location-card {
+    width: 100%;
+    max-width: 420px;
+    min-height: 280px;
+    padding: 48px 32px 40px;
+    justify-content: center;
+}
+.capital-card.location-card .city {
+    font-size: 1.85em;
+    line-height: 1.2;
+    margin-bottom: 16px;
+}
+.capital-card.location-card .temp {
+    font-size: 3.5em;
+    margin: 8px 0 10px;
+}
+.capital-card.location-card .desc {
+    font-size: 1.2em;
+    max-width: 250px;
+    line-height: 1.35;
+}
+.capital-card.location-card .favourite-star {
+    font-size: 1.9em;
+    top: 18px;
+    right: 20px;
+}
+
 .city-info-panel {
     width: 100%;
     max-width: min(1100px, 100%);
@@ -906,6 +944,20 @@ button:hover {
     }
     .capital-card .temp {
         font-size: 1.7em;
+    }
+    .capital-card.location-card {
+        max-width: 100%;
+        min-height: 0;
+        padding: 36px 20px 28px;
+    }
+    .capital-card.location-card .city {
+        font-size: 1.45em;
+    }
+    .capital-card.location-card .temp {
+        font-size: 2.8em;
+    }
+    .capital-card.location-card .desc {
+        font-size: 1.05em;
     }
     .daily-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
