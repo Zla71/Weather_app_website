@@ -16,6 +16,7 @@ describe('City search flow', () => {
     cy.get('#weatherResult .city-info-panel').should('contain.text', 'Paris');
     cy.get('#weatherResult .current-weather').should('contain.text', '°C');
     cy.get('#btnHourly').should('be.visible');
+    cy.get('#btnMonthly').should('be.visible');
   });
 
   it('shows the 7-day forecast inline in the sidebar', () => {
@@ -28,6 +29,18 @@ describe('City search flow', () => {
     searchFor('Paris');
     cy.get('#btnHourly').click();
     cy.get('#forecastContainer .forecast-hour').should('have.length.greaterThan', 0);
+    cy.get('.city-info-panel').should('not.be.visible');
+
+    cy.get('#forecastContainer button').contains('Back').click();
+    cy.get('.city-info-panel').should('be.visible');
+  });
+
+  it('shows a monthly forecast and can navigate back', () => {
+    searchFor('Paris');
+    cy.get('#btnMonthly').click();
+    cy.wait('@openMeteoSeasonal');
+    cy.get('#forecastContainer .forecast-month-day').should('have.length', 2);
+    cy.get('#forecastContainer').should('contain.text', 'One Month Forecast');
     cy.get('.city-info-panel').should('not.be.visible');
 
     cy.get('#forecastContainer button').contains('Back').click();

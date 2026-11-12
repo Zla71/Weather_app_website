@@ -45,6 +45,25 @@ Cypress.Commands.add('stubWeatherApis', () => {
     fixture: 'openCage.json',
   }).as('openCage');
 
+  cy.intercept('GET', 'https://seasonal-api.open-meteo.com/v1/seasonal*', {
+    daily: {
+      time: ['2026-11-12', '2026-11-13'],
+      weather_code: [2, 61],
+      temperature_2m_max: [14, 12],
+      temperature_2m_min: [7, 6],
+      precipitation_sum: [0, 2.4],
+      wind_speed_10m_mean: [11, 15],
+      sunrise: ['2026-11-12T07:12', '2026-11-13T07:13'],
+      sunset: ['2026-11-12T16:48', '2026-11-13T16:47'],
+    },
+    hourly: {
+      time: ['2026-11-12T00:00', '2026-11-12T06:00', '2026-11-13T00:00', '2026-11-13T06:00'],
+      relative_humidity_2m: [70, 74, 80, 82],
+      wind_direction_10m: [40, 50, 180, 190],
+    },
+    utc_offset_seconds: 0,
+  }).as('openMeteoSeasonal');
+
   cy.intercept('GET', 'https://*.wikipedia.org/api/rest_v1/page/summary/*', {
     statusCode: 404,
     body: {},
