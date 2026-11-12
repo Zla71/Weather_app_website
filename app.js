@@ -14,11 +14,13 @@ const TEXT = {
     back: 'Back',
     daily: '7-day forecast',
     hourly: '48 Hours Forecast',
+    monthly: 'One Month Forecast',
     hours48: '48h',
     loading: 'Loading...',
     notFound: 'City not found.',
     noForecast: 'No forecast for this city.',
     noHourly: 'No hourly forecast.',
+    noMonthly: 'No monthly forecast.',
     error: 'Error loading forecast.',
     min: 'Min',
     max: 'Max',
@@ -30,7 +32,7 @@ const TEXT = {
 
 let lastSearchedCity = '';
 let lastSearchedCoords = null; // { lat, lon } | null
-let currentView = 'main'; // 'main' | 'daily' | 'hourly'
+let currentView = 'main'; // 'main' | 'daily' | 'hourly' | 'monthly'
 let homeContentToken = 0;
 let cachedUserCoords = undefined; // undefined = not resolved yet, null = unavailable
 
@@ -606,6 +608,7 @@ async function getWeather(isRelang, explicitCoords) {
         cityInfoHtml += hourlyStripHtml;
         cityInfoHtml += `<div class="forecast-mode-buttons">
             <button id="btnHourly" class="hours48-btn">${TEXT.hourly}</button>
+            <button id="btnMonthly" class="hours48-btn">${TEXT.monthly}</button>
         </div>`;
         if (cityImageUrl) {
             cityInfoHtml += `<div class="city-image-wrap"><img src="${cityImageUrl}" alt="${cityNameForWiki}" class="city-image"></div>`;
@@ -773,12 +776,174 @@ async function getWeather(isRelang, explicitCoords) {
                 showBackButton(() => { history.back(); });
             }
         }
+        function parseLocalDate(dateStr) {
+            const [year, month, day] = dateStr.slice(0, 10).split('-').map(Number);
+            return new Date(year, month - 1, day);
+        }
+        function formatLocalDateKey(date) {
+            const pad = (n) => String(n).padStart(2, '0');
+            return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+        }
+        function meanWindDirection(degrees) {
+            if (!degrees.length) return null;
+            let sinSum = 0;
+            let cosSum = 0;
+            degrees.forEach((deg) => {
+                const rad = deg * Math.PI / 180;
+                sinSum += Math.sin(rad);
+                cosSum += Math.cos(rad);
+            });
+            const mean = Math.atan2(sinSum, cosSum) * 180 / Math.PI;
+            return (mean + 360) % 360;
+        }
+        async function renderMonthlyForecast() {
+            currentView = 'monthly';
+            document.querySelector('.city-info-panel').style.display = 'none';
+            const forecastEl = document.getElementById('forecastContainer');
+            forecastEl.innerHTML = TEXT.loading;
+            try {
+                const monthlyData = await cachedFetchJson(`https://seasonal-api.open-meteo.com/v1/seasonal?latitude=${lat}&longitude=${lon}&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_mean,sunrise,sunset&hourly=relative_humidity_2m,wind_direction_10m&forecast_days=31&timezone=auto&models=ecmwf_ec46_ensemble_mean`);
+                const daily = monthlyData.daily;
+                if (!daily || !daily.time || !daily.time.length) {
+                    forecastEl.innerHTML = `<b>${TEXT.monthly}:</b><br>${TEXT.noMonthly}`;
+                    showBackButton(() => { history.back(); });
+                    return;
+                }
+
+                const humidityByDate = {};
+                const windDirByDate = {};
+                if (monthlyData.hourly && monthlyData.hourly.time) {
+                    monthlyData.hourly.time.forEach((time, i) => {
+                        const dateKey = time.slice(0, 10);
+                        const humidity = monthlyData.hourly.relative_humidity_2m ? monthlyData.hourly.relative_humidity_2m[i] : null;
+                        const windDir = monthlyData.hourly.wind_direction_10m ? monthlyData.hourly.wind_direction_10m[i] : null;
+                        if (typeof humidity === 'number') {
+                            if (!humidityByDate[dateKey]) humidityByDate[dateKey] = [];
+                            humidityByDate[dateKey].push(humidity);
+                        }
+                        if (typeof windDir === 'number') {
+                            if (!windDirByDate[dateKey]) windDirByDate[dateKey] = [];
+                            windDirByDate[dateKey].push(windDir);
+                        }
+                    });
+                }
+
+                const offsetSec = typeof monthlyData.utc_offset_seconds === 'number' ? monthlyData.utc_offset_seconds : 0;
+                const cityNow = new Date(Date.now() + offsetSec * 1000);
+                const todayKey = `${cityNow.getUTCFullYear()}-${String(cityNow.getUTCMonth() + 1).padStart(2, '0')}-${String(cityNow.getUTCDate()).padStart(2, '0')}`;
+
+                let warmest = null;
+                let coldest = null;
+                let precipTotal = 0;
+                let wetDays = 0;
+                daily.time.forEach((dateKey, i) => {
+                    const maxTemp = daily.temperature_2m_max ? daily.temperature_2m_max[i] : null;
+                    const minTemp = daily.temperature_2m_min ? daily.temperature_2m_min[i] : null;
+                    const precip = daily.precipitation_sum ? daily.precipitation_sum[i] : 0;
+                    if (typeof maxTemp === 'number' && (!warmest || maxTemp > warmest.temp)) {
+                        warmest = { temp: maxTemp, dateKey };
+                    }
+                    if (typeof minTemp === 'number' && (!coldest || minTemp < coldest.temp)) {
+                        coldest = { temp: minTemp, dateKey };
+                    }
+                    if (typeof precip === 'number') {
+                        precipTotal += precip;
+                        if (precip >= 0.1) wetDays += 1;
+                    }
+                });
+                const formatSummaryDate = (dateKey) => parseLocalDate(dateKey).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+                const summaryHtml = `<div class="month-summary">
+                    <div class="month-summary-item">
+                        <span class="month-summary-label">Warmest</span>
+                        <span class="month-summary-value">${warmest ? Math.round(warmest.temp) + '°C' : '-'}</span>
+                        <span class="month-summary-sub">${warmest ? formatSummaryDate(warmest.dateKey) : ''}</span>
+                    </div>
+                    <div class="month-summary-item">
+                        <span class="month-summary-label">Coldest</span>
+                        <span class="month-summary-value">${coldest ? Math.round(coldest.temp) + '°C' : '-'}</span>
+                        <span class="month-summary-sub">${coldest ? formatSummaryDate(coldest.dateKey) : ''}</span>
+                    </div>
+                    <div class="month-summary-item">
+                        <span class="month-summary-label">Rain total</span>
+                        <span class="month-summary-value">${Math.round(precipTotal)} mm</span>
+                        <span class="month-summary-sub">${daily.time.length} days</span>
+                    </div>
+                    <div class="month-summary-item">
+                        <span class="month-summary-label">Wet days</span>
+                        <span class="month-summary-value">${wetDays}</span>
+                        <span class="month-summary-sub">≥ 0.1 mm</span>
+                    </div>
+                </div>`;
+
+                let monthlyHtml = `<b class="month-forecast-title">${TEXT.monthly}</b>${summaryHtml}<div class="hourly-grid month-grid">`;
+                let lastWeekKey = '';
+                daily.time.forEach((dateKey, i) => {
+                    const date = parseLocalDate(dateKey);
+                    const weekStart = new Date(date);
+                    const weekdayIndex = weekStart.getDay();
+                    const mondayOffset = weekdayIndex === 0 ? -6 : 1 - weekdayIndex;
+                    weekStart.setDate(weekStart.getDate() + mondayOffset);
+                    const weekKey = formatLocalDateKey(weekStart);
+                    if (weekKey !== lastWeekKey) {
+                        const weekLabel = weekStart.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+                        monthlyHtml += `<div class="month-week-label">Week of ${weekLabel}</div>`;
+                        lastWeekKey = weekKey;
+                    }
+
+                    const rawCode = daily.weather_code ? daily.weather_code[i] : null;
+                    const code = typeof rawCode === 'number' ? Math.round(rawCode) : null;
+                    const icon = getMeteoIcon(code, 1);
+                    const condition = getMeteoCondition(code);
+                    const roundOrDash = (value) => (typeof value === 'number' ? Math.round(value) : '-');
+                    const maxTemp = roundOrDash(daily.temperature_2m_max ? daily.temperature_2m_max[i] : null);
+                    const minTemp = roundOrDash(daily.temperature_2m_min ? daily.temperature_2m_min[i] : null);
+                    const windSpeed = roundOrDash(daily.wind_speed_10m_mean ? daily.wind_speed_10m_mean[i] : null);
+                    const windDir = meanWindDirection(windDirByDate[dateKey] || []);
+                    const humidityValues = humidityByDate[dateKey] || [];
+                    const humidity = humidityValues.length
+                        ? Math.round(humidityValues.reduce((sum, value) => sum + value, 0) / humidityValues.length)
+                        : '-';
+                    const precipRaw = daily.precipitation_sum ? daily.precipitation_sum[i] : null;
+                    const precip = typeof precipRaw === 'number' ? Math.round(precipRaw * 10) / 10 : '-';
+                    const sunrise = daily.sunrise && daily.sunrise[i] ? daily.sunrise[i].slice(11, 16) : '';
+                    const sunset = daily.sunset && daily.sunset[i] ? daily.sunset[i].slice(11, 16) : '';
+                    const sunLine = sunrise && sunset ? `${TEXT.sunrise} ${sunrise} · ${TEXT.sunset} ${sunset}` : '';
+                    const dayName = dateKey === todayKey
+                        ? 'Today'
+                        : date.toLocaleDateString('en-GB', { weekday: 'short' });
+                    const dateLabel = date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+
+                    monthlyHtml += `<div class="forecast-hour forecast-month-day animate-fade-in">
+                        <div class="month-day-weekday">${dayName}</div>
+                        <div class="month-day-date">${dateLabel}</div>
+                        <span class="month-day-icon">${icon}</span>
+                        <div class="month-day-condition">${condition}</div>
+                        <div class="month-day-temps"><b>${maxTemp}°</b><span>${minTemp}°</span></div>
+                        <div class="month-day-meta">${TEXT.wind}: ${windSpeed} ${TEXT.windUnit} ${windDirectionText(windDir)}</div>
+                        <div class="month-day-meta">${TEXT.humidity}: ${humidity}%</div>
+                        <div class="month-day-meta">${TEXT.precip}: ${precip} mm</div>
+                        ${sunLine ? `<div class="month-day-sun">${sunLine}</div>` : ''}
+                    </div>`;
+                });
+                monthlyHtml += '</div>';
+                forecastEl.innerHTML = monthlyHtml;
+                showBackButton(() => { history.back(); });
+            } catch (e) {
+                forecastEl.innerHTML = TEXT.error;
+                showBackButton(() => { history.back(); });
+            }
+        }
         showCityMain();
         document.getElementById('btnHourly').onclick = () => {
             renderHourlyForecast();
             pushCityViewState(lastSearchedCity, 'hourly', lat, lon);
         };
+        document.getElementById('btnMonthly').onclick = () => {
+            renderMonthlyForecast();
+            pushCityViewState(lastSearchedCity, 'monthly', lat, lon);
+        };
         window.__renderHourlyForecast = renderHourlyForecast;
+        window.__renderMonthlyForecast = renderMonthlyForecast;
         window.__showCityMain = showCityMain;
     } catch (err) {
         resultDiv.textContent = TEXT.error;
@@ -1102,13 +1267,16 @@ window.addEventListener('popstate', async (e) => {
         lastSearchedCity = state.city;
         showSearch();
         await getWeather(true, stateCoords);
-    } else if (state.view === 'hourly') {
+    } else if (state.view === 'hourly' || state.view === 'monthly') {
         document.getElementById('cityInput').value = state.city;
         lastSearchedCity = state.city;
         showSearch();
         await getWeather(true, stateCoords);
-        if (typeof window.__renderHourlyForecast === 'function') {
+        if (state.view === 'hourly' && typeof window.__renderHourlyForecast === 'function') {
             window.__renderHourlyForecast();
+        }
+        if (state.view === 'monthly' && typeof window.__renderMonthlyForecast === 'function') {
+            window.__renderMonthlyForecast();
         }
     }
 });
@@ -1119,7 +1287,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('cityInput').placeholder = TEXT.searchPlaceholder;
     document.getElementById('searchBtn').textContent = TEXT.searchBtn;
 
-    const initialHashMatch = location.hash.match(/^#city\/([^/]+)(?:\/(hourly))?$/);
+    const initialHashMatch = location.hash.match(/^#city\/([^/]+)(?:\/(hourly|monthly))?$/);
     if (initialHashMatch) {
         const initialCity = decodeURIComponent(initialHashMatch[1]);
         const initialView = initialHashMatch[2];
@@ -1133,6 +1301,9 @@ window.addEventListener('DOMContentLoaded', async () => {
         await getWeather();
         if (initialView === 'hourly' && typeof window.__renderHourlyForecast === 'function') {
             window.__renderHourlyForecast();
+        }
+        if (initialView === 'monthly' && typeof window.__renderMonthlyForecast === 'function') {
+            window.__renderMonthlyForecast();
         }
     } else {
         replaceHomeState();
